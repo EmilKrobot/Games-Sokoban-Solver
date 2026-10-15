@@ -1,0 +1,10 @@
+Changes
+INSTALL
+lib/Games/Sokoban/Solver.pm
+lib/Games/Sokoban/Solver/Data/README.txt
+Makefile.PL
+MANIFEST
+MANIFEST.SKIP
+README
+t/00-load.t
+t/Games-Sokoban-Solver.t

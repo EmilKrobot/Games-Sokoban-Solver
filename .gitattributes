@@ -1,0 +1,13 @@
+# The distribution is built on Windows and released for every platform: text
+# files are LF in the repository AND in the working tree, so that `make dist`
+# tars files a Linux perl reads without a stray carriage return (a CRLF
+# shebang line is "bad interpreter" there).  The Storable tables are bytes.
+*       text=auto eol=lf
+*.pm    text eol=lf
+*.pl    text eol=lf
+*.pod   text eol=lf
+*.t     text eol=lf
+*.xsb   text eol=lf
+*.ini   text eol=lf
+*.stor  binary
+*.png   binary

@@ -1,0 +1,34 @@
+--add-semicolons
+--add-whitespace
+--block-brace-tightness=2
+--character-encoding=none
+--closing-side-comment-interval=15
+--closing-side-comments
+--closing-token-indentation=1
+--continuation-indentation=4
+--converge
+--default-tabsize=4
+--delete-old-whitespace
+--delete-semicolons
+--extended-continuation-indentation
+--extended-syntax
+--indent-columns=4
+--indent-spaced-block-comments
+--keep-old-blank-lines=0
+--logical-padding
+--maximum-consecutive-blank-lines=1
+--blank-lines-before-subs=1
+--maximum-line-length=130
+--nospace-for-semicolon
+--nospace-terminal-semicolon
+--one-line-block-nesting=1
+--outdent-labels
+--paren-tightness=2
+--quiet
+--square-bracket-tightness=2
+--standard-error-output
+--standard-output
+--trim-qw
+--want-left-space="&. |. ^. ~. &.= |.= ^.="
+--want-right-space="&. |. ^. ~. &.= |.= ^.="
+# --variable-maximum-line-length
