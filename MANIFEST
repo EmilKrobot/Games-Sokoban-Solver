@@ -1,6 +1,7 @@
 Changes
 INSTALL
 lib/Games/Sokoban/Solver.pm
+lib/Games/Sokoban/Solver/Code.pm
 lib/Games/Sokoban/Solver/Console.pm
 lib/Games/Sokoban/Solver/Data.pm
 lib/Games/Sokoban/Solver/Data/corridor_pattern.stor
@@ -8,9 +9,14 @@ lib/Games/Sokoban/Solver/Data/fest_patterns.stor
 lib/Games/Sokoban/Solver/Data/hole_pattern.stor
 lib/Games/Sokoban/Solver/Data/hole_templates.stor
 lib/Games/Sokoban/Solver/Data/README.txt
+lib/Games/Sokoban/Solver/Fest/Analysis.pm
+lib/Games/Sokoban/Solver/Festival/Analysis.pm
+lib/Games/Sokoban/Solver/Finder.pm
 lib/Games/Sokoban/Solver/Heap.pm
+lib/Games/Sokoban/Solver/Level.pm
 lib/Games/Sokoban/Solver/Memory.pm
 lib/Games/Sokoban/Solver/Munkres.pm
+lib/Games/Sokoban/Solver/Parser.pm
 lib/Games/Sokoban/Solver/Path.pm
 lib/Games/Sokoban/Solver/Replay.pm
 Makefile.PL
@@ -21,5 +27,11 @@ t/00-load.t
 t/01-console-memory.t
 t/02-heap-munkres.t
 t/03-path-replay.t
-t/Games-Sokoban-Solver.t
+t/04-level.t
+t/05-code.t
+t/06-finder.t
+t/07-parser.t
+t/08-festival-analysis.t
+t/09-fest-analysis.t
+t/data/micro.xsb
 t/lib/BruteForce.pm

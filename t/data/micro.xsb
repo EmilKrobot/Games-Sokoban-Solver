@@ -1,0 +1,28 @@
+; Hand-made micro levels for the tests of Games::Sokoban::Solver.
+; They belong to nobody and may be copied freely.
+
+One box, a corner to walk round
+#######
+#     #
+# $.  #
+# @   #
+#######
+
+Two boxes side by side
+######
+#    #
+# $$ #
+# ..@#
+######
+
+#####
+#@$.#
+#####
+Title: One push
+
+Three boxes in a room
+########
+#  .   #
+# $$$ .#
+#  .  @#
+########

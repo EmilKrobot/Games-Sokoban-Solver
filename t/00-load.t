@@ -17,6 +17,8 @@ my @modules = (
     'Games::Sokoban::Solver',          'Games::Sokoban::Solver::Data',   'Games::Sokoban::Solver::Console',
     'Games::Sokoban::Solver::Memory',  'Games::Sokoban::Solver::Heap',   'Games::Sokoban::Solver::Munkres',
     'Games::Sokoban::Solver::Path',    'Games::Sokoban::Solver::Replay',
+    'Games::Sokoban::Solver::Level',   'Games::Sokoban::Solver::Code',   'Games::Sokoban::Solver::Finder',
+    'Games::Sokoban::Solver::Parser',  'Games::Sokoban::Solver::Festival::Analysis', 'Games::Sokoban::Solver::Fest::Analysis',
 );
 
 use_ok($_) for @modules;
