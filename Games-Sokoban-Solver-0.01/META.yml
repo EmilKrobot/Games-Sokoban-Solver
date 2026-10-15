@@ -1,0 +1,50 @@
+---
+abstract: 'solve Sokoban levels: a first solution by a race of search modes, then the shortest one'
+author:
+  - 'Jiri Broz <jiri.krobot.broz@gmail.com>'
+build_requires:
+  ExtUtils::MakeMaker: '0'
+  Test::More: '1.302'
+configure_requires:
+  ExtUtils::MakeMaker: '0'
+dynamic_config: 1
+generated_by: 'ExtUtils::MakeMaker version 7.76, CPAN::Meta::Converter version 2.150013'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: '1.4'
+name: Games-Sokoban-Solver
+no_index:
+  directory:
+    - t
+    - inc
+    - xt
+    - maint
+recommends:
+  BerkeleyDB: '0.65'
+  Win32::API: '0'
+  Win32::Console: '0'
+  Win32::Console::ANSI: '0'
+requires:
+  Array::Heap: '3.22'
+  Carp: '0'
+  Compress::Zlib: '0'
+  Config: '0'
+  Digest::MD5: '0'
+  Exporter: '0'
+  File::Basename: '0'
+  File::Path: '0'
+  Getopt::Long: '0'
+  JSON::PP: '0'
+  List::Util: '1.45'
+  POSIX: '0'
+  Pod::Usage: '0'
+  Scalar::Util: '0'
+  Storable: '0'
+  Term::ANSIColor: '0'
+  Time::HiRes: '0'
+  constant: '0'
+  experimental: '0.032'
+  perl: '5.042000'
+version: '0.01'
+x_serialization_backend: 'CPAN::Meta::YAML version 0.020'

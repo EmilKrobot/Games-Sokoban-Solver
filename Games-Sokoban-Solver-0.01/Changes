@@ -1,0 +1,11 @@
+Revision history for Games-Sokoban-Solver
+
+0.01  (not yet released)
+    - First release: the solver pipeline of the Sokoban project of Jiri Broz,
+      transplanted into a CPAN distribution.  Engines carried over: Firstbet 3.8
+      (ten modes), Festival 0.20 (eight), Fest 1.03 (eight), FirstBack 0.07
+      (one), the optimal Solver 3.3 as Games::Sokoban::Solver::Optimal, and the
+      level preparation (Code 1.0, Parser 1.0, Festival_Parser 0.02, FestDev
+      1.00).  Deadlock patterns are computed at run time by the Finder instead
+      of being read from the project's pattern database.
+    - Skeleton created with h2xs 1.23 (-AX --skip-exporter --use-new-tests).
