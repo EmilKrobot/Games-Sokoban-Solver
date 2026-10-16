@@ -486,21 +486,14 @@ our $BAND          = 2;            # boxes off the record's track a queued child
 our $BAND_MEMO_MAX = 4_000_000;    # cap on memoized OUT verdicts
 my ($Band_cur, $Band_dropped, $Band_total, $Cw, $Band_zero, %BandMemo, @BandCfg);
 
-# The deadlock cache (%MemBad) and the move cache (%Tahy) of one solve, in RAM. In the
-# Sokoban project these subs were a seam over BerkeleyDB -- the two caches could live in
-# the game's own database and survive from one run to the next, which is what let a
-# proof take days -- and that twin is Games::Sokoban::Solver::Optimal::Berk; here the
-# seam is the RAM half of the same subs, so the search text above and below is the
-# project's own.
-sub bad_init ($g) { %MemBad = (); %Tahy = () }
-sub bad_close ($s) { %MemBad = (); %Tahy = () }
-sub setbad ($p) { $MemBad{$p} = 1 }
-sub isbad  ($p) { exists $MemBad{$p} }
-
-# Uniform "arrayref or undef", so callers can `my $c = tahy_get(...)`.
-sub tahy_get ($p)     { $Tahy{$p} }
-sub tahy_set ($p, $k) { $Tahy{$p} = $k }
-sub tahy_del ($p)     { delete $Tahy{$p} }
+# The deadlock cache (%MemBad) and the move cache (%Tahy) of one solve live in RAM and
+# are read and written in place wherever the search needs them. In the Sokoban project
+# those places went through seven one-line subs (setbad, isbad, tahy_get, ...) that were
+# a seam over BerkeleyDB -- the two caches could live in the game's own database and
+# survive from one run to the next, which is what let a proof take days -- and that twin
+# is Games::Sokoban::Solver::Optimal::Berk. Here the seam has no second side, so the
+# hash operations stand where the calls stood (the project's rule: op count beats
+# structure on a hot path).
 
 sub clearvars() {
     ($Band_cur, $Band_dropped, $Band_total) = (0, 0, 0);
@@ -562,7 +555,7 @@ sub clearvars() {
 
 sub initvars ($gameid, $gm) {
     clearvars();
-    bad_init($gameid);
+    %MemBad = ();
     %Game = %{ thaw(uncompress($gm)); };
     my $maze = $Game{'code'};
     $maze =~ tr/,//d;
@@ -832,33 +825,30 @@ sub is_bad ($bx, $t, $t_bag, $vb = undef) {
 #     too, discovered only now, possibly many moves after it was first
 #     proposed as a candidate.
 sub set_bad ($pozice) {
-    return if isbad($pozice);
-    setbad $pozice;
-    if (my $th = tahy_get($pozice)) {
+    return if exists $MemBad{$pozice};
+    $MemBad{$pozice} = 1;
+    if (my $th = $Tahy{$pozice}) {
         foreach my ($child, $step)(@$th) {
-            next if isbad($child);
+            next if exists $MemBad{$child};
             set_bad($child);
         }
     }
     my $parent = $Parent{$pozice};
     my $th;
-    if (defined $parent && length $parent && ($th = tahy_get($parent))) {
+    if (defined $parent && length $parent && ($th = $Tahy{$parent})) {
         my @kept;
         for (my $i = 0; $i < @$th; $i += 2) {
             push @kept, $th->[$i], $th->[$i + 1] unless $th->[$i] eq $pozice;
         }
         if (@kept < @$th) {
-
-            # Persist the trimmed move list back (a fresh put under Berkeley; an
-            # in-place replacement under RAM). Both backings see the change.
-            tahy_set($parent, \@kept);
+            $Tahy{$parent} = \@kept;    # the trimmed move list, in place
             set_bad($parent) unless @kept;
         }
     }
 } ## end sub set_bad
 
 sub tahy ($pozice) {
-    if (my $cached = tahy_get($pozice)) {
+    if (my $cached = $Tahy{$pozice}) {
         return @$cached;
     }
     my ($man, @baggage) = unpack($pu, $pozice);
@@ -894,7 +884,7 @@ sub tahy ($pozice) {
             splice(@nb, $i, 0, $t);
             $child = pack($pu, $bx, @nb);
 
-            if (isbad($child)) {
+            if (exists $MemBad{$child}) {
                 next;
             }
             $Bags{$t} = 1;
@@ -940,7 +930,7 @@ sub tahy ($pozice) {
         } ## end if (@frozen_set)
     } ## end if (@nomove)
     if (@tahy) {
-        tahy_set($pozice, [@tahy]);
+        $Tahy{$pozice} = [@tahy];
         return @tahy;
     }
     else {
@@ -1459,7 +1449,7 @@ sub bublej ($child, $pozice, $sollen) {
         return;
     }
     bucket_add($child, $sollen);
-    my $th = tahy_get($child) or return;
+    my $th = $Tahy{$child} or return;
     foreach my ($grand, $step)(@$th) {
         info();
         my $sol = $sollen + $step;
@@ -1467,7 +1457,7 @@ sub bublej ($child, $pozice, $sollen) {
         next unless exists $Seen{$grand};             # the cascade never discovers
         next if !$H_on and $Seen{$grand} & 1;         # cost order: expanded = final
         next unless ($Seen{$grand} >> 1) > $sol;      # recurse only into a real improvement
-        next if isbad($grand);
+        next if exists $MemBad{$grand};
         bublej($grand, $child, $sol);
     }
     return;
@@ -1533,14 +1523,14 @@ sub hledej () {
         # clamp this test had to be switched off entirely, and the expanded bit above
         # carried the whole duty.
         next if ($H_on ? $sol + odhad($pozice) : $sol) != $CurMin;
-        next if isbad($pozice);
+        next if exists $MemBad{$pozice};
         $Seen{$pozice} |= 1;             # cheapest-first: this cost is FINAL
         ++$Expanded;                     # a real parent: denominator of info()'s children-per-parent
         foreach my ($child, $step)(tahy($pozice)) {
             ++$bc;
             my $sollen = $sol + $step;
             next if $sollen >= $Bestlen;
-            next if isbad($child);
+            next if exists $MemBad{$child};
             if (!exists $Seen{$child}) {
                 $Parent{$child} = $pozice;
                 $Seen{$child}   = $sollen * 2;
@@ -1618,7 +1608,7 @@ sub bublej_fifo ($child, $pozice, $sollen) {
     # generate its children. THIS is the case the re-queue exists for: the node was popped
     # and dropped on `$sol >= $Bestlen` without being expanded, so the cascade dead-ends
     # here and only the heap can carry it further.
-    my $th   = tahy_get($child) or return 1;
+    my $th   = $Tahy{$child} or return 1;
     my $need = 0;
     foreach my ($grand, $step)(@$th) {
         if ($Improved and want_restart()) {
@@ -1628,7 +1618,7 @@ sub bublej_fifo ($child, $pozice, $sollen) {
         info();
         my $sol = $sollen + $step;
         next if $sol >= $Bestlen;
-        next if isbad($grand);
+        next if exists $MemBad{$grand};
 
         # A child nobody has seen is the one thing a re-expansion of $child could add,
         # because the cascade never discovers. `exists` is deliberate -- the root's cost
@@ -1665,7 +1655,7 @@ sub hledej_fifo () {
         my $pozice = shift @Heap;
         $Seen{$pozice} &= ~1;    # off the queue; the cost keeps the high bits
         --$N_Open;
-        next if isbad($pozice);
+        next if exists $MemBad{$pozice};
         my $sol = $Seen{$pozice} >> 1;
 
         # NB: popped and NOT expanded -- no %Tahy is cached for it. This is precisely the
@@ -1676,7 +1666,7 @@ sub hledej_fifo () {
             ++$bc;
             my $sollen = $sol + $step;
             next if $sollen >= $Bestlen;
-            next if isbad($child);
+            next if exists $MemBad{$child};
 
             # THE BAND: an unseen child more than $Band_cur boxes off the record's track is
             # not queued and not recorded (a later, closer route must still be free to
@@ -1883,7 +1873,8 @@ sub solve ($gameid, $gm, $first_path = undef) {
     $ending = sprintf '%8d %3d %4d %-10s %6d %6d %12.4f %8.0f %8.0f',
         $gameid, $Game{'nbox'}, $Game{'ncell'}, $reason, $plen, $steps, $doba, $bc / $doba, $counter / $doba;
     barva($reason, $ending);
-    bad_close($reason eq 'SOLVED' ? 1 : 0);
+    %MemBad = ();    # the caches of this solve, given back
+    %Tahy   = ();
 
     # Why the run ended, by name: a MEMCAP or IGNORE stop returns as TIMEOUT (see above)
     # but must not be laundered -- the console line is gone by morning, this is what says
