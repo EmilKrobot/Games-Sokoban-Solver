@@ -67,6 +67,14 @@ WriteMakefile(
                 },
             },
         },
+        resources => {
+            repository => {
+                type => 'git',
+                url  => 'https://github.com/EmilKrobot/Games-Sokoban-Solver.git',
+                web  => 'https://github.com/EmilKrobot/Games-Sokoban-Solver',
+            },
+            bugtracker => { web => 'https://github.com/EmilKrobot/Games-Sokoban-Solver/issues' },
+        },
         no_index => { directory => [ 'xt', 'maint' ] },
     },
     test  => { TESTS => 't/*.t' },

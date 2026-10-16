@@ -24,12 +24,18 @@ jobs:
         run: perl -V
       - name: install the prerequisites
         run: cpanm --notest --installdeps .
-      - name: build and test
+      # The default shell on every runner, so that `perl` is the one the action
+      # installed (a bash step on Windows runs Git's own perl, which has no
+      # ExtUtils::MakeMaker).
+      - name: the test suite
+        run: prove -l t
+      - name: Makefile.PL, make, make test, make dist
+        if: runner.os == 'Linux'
         run: |
           perl Makefile.PL
           make
           make test
-        shell: bash
+          make dist
       - name: the program, one task at a time
         run: perl -Ilib bin/soko-solver.pl --no-ini --jobs 1 --time 10 --optimal 5 t/data/micro.xsb
       - name: the program, with threads

@@ -45,17 +45,30 @@ is(podil(0, 5),        '     0%', 'no number');
 is(podil(3, 0),        '    N/A', 'no base');
 is(length podil(7, 7), 7,         'seven characters wide');
 
-# ---- Memory, with the probe refused --------------------------------------
+# ---- Memory, with the Win32 probe refused ----------------------------------
+# On Windows the hook above leaves no probe at all. Elsewhere the probe is
+# /proc/meminfo, which no hook can hide: where it is readable the module must
+# answer the whole machine's numbers, where it is not (a BSD, a Mac) nothing.
 {
     my $warned = '';
     local $SIG{__WARN__} = sub {$warned .= $_[0]};
-    is(scope(),    'none', 'no probe: scope none');
-    is(used_gb(),  0,      'no probe: used_gb is 0, not undef');
-    is(total_gb(), 0,      'no probe: total_gb is 0');
-    like($warned, qr/memory net is off/, 'said once on STDERR');
-    $warned = '';
-    used_gb();
-    is($warned, '', 'said only once');
+    if ($^O ne 'MSWin32' and -r '/proc/meminfo') {
+        is(scope(), 'system', '/proc/meminfo: scope system');
+        cmp_ok(used_gb(),  '>', 0, '/proc/meminfo: some memory in use');
+        cmp_ok(total_gb(), '>', 0, '/proc/meminfo: the machine has memory');
+        is($warned, '', 'nothing said on STDERR');
+        used_gb();
+        is($warned, '', 'still nothing');
+    }
+    else {
+        is(scope(),    'none', 'no probe: scope none');
+        is(used_gb(),  0,      'no probe: used_gb is 0, not undef');
+        is(total_gb(), 0,      'no probe: total_gb is 0');
+        like($warned, qr/memory net is off/, 'said once on STDERR');
+        $warned = '';
+        used_gb();
+        is($warned, '', 'said only once');
+    }
 }
 
 # ---- Memory, in a fresh perl with the modules it has -----------------------
