@@ -1396,6 +1396,49 @@ C<Storable::nfreeze>), the form the engines take.
 
 =back
 
+=head1 THE BLOK BUDGET
+
+Measured on 2026-10-16 against the Sokoban project's stored tables (the
+complete bloks of 1.92 million patterns): 50 random games of each size tier of
+the project's collection, the bloks of every game computed by the serial
+C<blok_table> under four budgets, and the share of the stored blok vectors the
+budget recovered. C<xt/eq_parser.pl --calibrate> is the measurement.
+
+    tier  budget  games  share of vectors  patterns complete  games complete
+      1     10 s    50        96.2 %            93.9 %              46
+      1     30 s    50        98.5 %            98.0 %              49
+      1     60 s    50        98.5 %            98.0 %              49
+      1    120 s    50        98.6 %            98.1 %              49
+      2     10 s    51        60.5 %            73.2 %              20
+      2     30 s    51        69.4 %            80.3 %              27
+      2     60 s    51        77.5 %            85.8 %              31
+      2    120 s    51        84.0 %            90.5 %              37
+      3     10 s    50        53.2 %            69.9 %              16
+      3     30 s    50        62.4 %            76.4 %              23
+      3     60 s    50        67.7 %            80.8 %              26
+      3    120 s    50        71.2 %            82.9 %              30
+      4     10 s    50        48.0 %            68.6 %              10
+      4     30 s    50        57.0 %            76.0 %              13
+      4     60 s    50        63.6 %            80.3 %              20
+      4    120 s    50        70.1 %            83.5 %              23
+
+The tiers are the project's size classes of a level (1 the smallest, about
+20 floor cells and up to 16 boxes; 4 the largest, about 70 cells and up to 30
+boxes). A small level has its whole table within 30 seconds; a large one
+recovers a little over half of its vectors in 30 seconds and the rest comes
+slowly -- doubling the budget adds five to eight points, and the patterns
+left are the ones that took the project minutes each.
+
+The default budget of the program is 30 seconds, for two reasons. The
+program's default time for one mode of the race is 60 seconds, and the bloks
+are paid once before the race starts, so a budget longer than a mode's would
+hold the race back for a table the engines can do without (every engine has
+a deadlock battery of its own; a missing blok costs search, never
+correctness). And the program deals the patterns out to its pool of workers,
+so 30 seconds of budget with four workers is the work of the 120-second row
+above. Whoever wants the complete table of a large level sets the budget to
+a few minutes, or to none at all with C<-1>.
+
 =head1 THE KEYS OF THE ANALYSIS
 
 C<code> (the board, rows joined by commas), C<w h ncell nbox player baggage
