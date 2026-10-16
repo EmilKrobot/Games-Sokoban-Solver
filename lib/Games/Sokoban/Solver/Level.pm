@@ -24,10 +24,8 @@ package Games::Sokoban::Solver::Level;
 # Lineage: hra(), dummy() and player() of app/base/zdroj.pl in the Sokoban
 # project, whose zdroj.code0/code1 columns this module reproduces byte for byte
 # on every level of that project's collection.
-
 use v5.42;
 use Carp ();
-
 our $VERSION = '0.01';
 
 # A line of a level: the XSB characters only, with at least one wall. '-' and
@@ -44,7 +42,13 @@ sub read ($text) {
     my (@levels, @rows, $pending);
     my $flush = sub {
         return unless @rows;
-        push @levels, {'index' => scalar(@levels) + 1, 'title' => $pending // 'Level ' . (@levels + 1), 'rows' => [@rows], 'titled' => defined $pending};
+        push @levels,
+            {
+                'index'  => scalar(@levels) + 1,
+                'title'  => $pending // 'Level ' . (@levels + 1),
+                'rows'   => [@rows],
+                'titled' => defined $pending
+            };
         @rows    = ();
         $pending = undef;
     };
@@ -59,33 +63,33 @@ sub read ($text) {
         next unless $clean =~ /\S/;
         if ($clean =~ /\ATitle:\s*(.*)\z/i) {
             my $title = $1;
-            if (@levels and !$levels[-1]{'titled'}) { $levels[-1]{'title'} = $title; $levels[-1]{'titled'} = 1 }
-            else                                    { $pending = $title }
+            if (@levels and !$levels[-1]{'titled'}) {$levels[-1]{'title'} = $title; $levels[-1]{'titled'} = 1}
+            else                                    {$pending = $title}
             next;
         }
         $pending = $clean;
-    }
+    } ## end for my $line (@lines)
     $flush->();
     delete $_->{'titled'} for @levels;
     return @levels;
-}
+} ## end sub read
 
 # The rows of one level -> ($code0, $code1, \%info), or a death with one
 # sentence beginning 'REFUSED:'. The rows are taken as they come: a row shorter
 # than the widest is padded with floor on the right, trailing blanks are kept
 # (read() cuts them; a caller that wants the author's rectangle keeps them).
 sub normalize ($rows, $ringed = 0) {
-    my @rows = map { my $r = $_; $r =~ tr/\-_/  /; $r } @$rows;
+    my @rows = map {my $r = $_; $r =~ tr/\-_/  /; $r} @$rows;
     Carp::croak('REFUSED: an empty level') unless @rows;
     for my $row (@rows) {
-        if ($row =~ /([^ #\$.\@*+])/) { Carp::croak("REFUSED: the character '$1' is not part of a level") }
+        if ($row =~ /([^ #\$.\@*+])/) {Carp::croak("REFUSED: the character '$1' is not part of a level")}
     }
     my $w = 0;
-    for (@rows) { $w = length $_ if length $_ > $w }
+    for (@rows) {$w = length $_ if length $_ > $w}
     $_ .= ' ' x ($w - length $_) for @rows;
-    my $h = scalar @rows;
-    my @digits = map { tr/ .$@*+#/0345789/r } @rows;
-    my $flat = join '', @digits;
+    my $h       = scalar @rows;
+    my @digits  = map {tr/ .$@*+#/0345789/r} @rows;
+    my $flat    = join '', @digits;
     my $players = $flat =~ tr/58//;
     Carp::croak("REFUSED: $players players (there must be one)") if $players != 1;
     $flat =~ /[58]/;
@@ -103,7 +107,7 @@ sub normalize ($rows, $ringed = 0) {
         my $row    = int($x / $w);
         $rim = 1 if $row == 0 or $row == $h - 1 or $column == 0 or $column == $w - 1;
         for my $t ($x - 1, $x + 1, $x + $w, $x - $w) {
-            next if $t < 0 or $t > $last;
+            next if $t < 0                        or $t > $last;
             next if $t == $x - 1 and $column == 0 or $t == $x + 1 and $column == $w - 1;
             next if $maze[$t] eq '9';
             next if $visited{$t}++;
@@ -117,12 +121,11 @@ sub normalize ($rows, $ringed = 0) {
     # cell a neighbour on each side, which the modules after this one assume.
     if ($rim) {
         Carp::croak('REFUSED: the level is open even inside a ring of walls') if $ringed;
-        my ($code0, $code1, $info) = normalize([('#' x ($w + 2)), (map { "#$_#" } @rows), ('#' x ($w + 2))], 1);
+        my ($code0, $code1, $info) = normalize([('#' x ($w + 2)), (map {"#$_#"} @rows), ('#' x ($w + 2))], 1);
         $info->{'ring'} = 1;
         unshift @{ $info->{'notes'} }, 'the level touches the edge of its rectangle: a ring of walls was added';
         return ($code0, $code1, $info);
     }
-
     my @maze0 = @maze;
     my @maze1 = @maze;
     for my $i (0 .. $last) {
@@ -139,21 +142,19 @@ sub normalize ($rows, $ringed = 0) {
     Carp::croak('REFUSED: no box at all') unless $nbox;
     Carp::croak("REFUSED: boxes and goals differ ($nbox boxes, $ngoal goals)") if $ngoal != $nbox;
     Carp::croak('REFUSED: every box is already on a goal (nothing to solve)') unless $flat =~ /4/;
-
     my @notes;
     push @notes, "only $ncell cells the player can reach: smaller than anything measured" if $ncell < 10;
     push @notes, "$ncell cells the player can reach: larger than anything measured (400)" if $ncell > 400;
-    push @notes, "$nbox boxes: more than anything measured (30)"                           if $nbox > 30;
-    return ($code0, $code1, {'w' => $w, 'h' => $h, 'nbox' => $nbox, 'ncell' => $ncell, 'ngoal' => $ngoal, 'ring' => 0, 'notes' => \@notes});
-}
+    push @notes, "$nbox boxes: more than anything measured (30)"                          if $nbox > 30;
+    return ($code0, $code1,
+        { 'w' => $w, 'h' => $h, 'nbox' => $nbox, 'ncell' => $ncell, 'ngoal' => $ngoal, 'ring' => 0, 'notes' => \@notes });
+} ## end sub normalize
 
 # The digits of a board back as the text of a level, one row per line.
 sub as_text ($code) {
-    return join("\n", map { tr/0123456789/   .$@@*+#/r } split /,/, $code, -1) . "\n";
+    return join("\n", map {tr/0123456789/   .$@@*+#/r} split /,/, $code, -1) . "\n";
 }
-
 1;
-
 __END__
 
 =head1 NAME

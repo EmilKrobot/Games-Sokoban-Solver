@@ -26,15 +26,14 @@ use v5.42;
 use FindBin ();
 use lib "$FindBin::Bin/../lib", "$FindBin::Bin/lib";
 use Gate;
-use Getopt::Long ();
+use Getopt::Long                   ();
 use Games::Sokoban::Solver::Path   ();
 use Games::Sokoban::Solver::Replay ();
 STDOUT->autoflush(1);
-
 my %opt = ('what' => 'stored', 'limit' => 2000, 'spoil' => 0);
-Getopt::Long::GetOptions(\%opt, 'what=s', 'limit=i', 'spoil!') or die "usage: replay_original.pl --what stored|firststep [--limit N] [--spoil]\n";
+Getopt::Long::GetOptions(\%opt, 'what=s', 'limit=i', 'spoil!')
+    or die "usage: replay_original.pl --what stored|firststep [--limit N] [--spoil]\n";
 $opt{'what'} =~ /\A(?:stored|firststep)\z/ or die "--what must be stored or firststep\n";
-
 my $db = Gate::db('Sokoban');
 
 if ($opt{'what'} eq 'stored') {
@@ -50,31 +49,38 @@ if ($opt{'what'} eq 'stored') {
             SELECT f.gameid, g.code, f.path FROM firstbet f JOIN game_blob g USING (gameid)
              WHERE f.status = 'SOLVED' ORDER BY random() LIMIT $half)
 SQL
-    my %n = ('paths' => 0, 'differ' => 0, 'refused' => 0, 'died' => 0);
+    my %n      = ('paths' => 0, 'differ' => 0, 'refused' => 0, 'died' => 0);
     my $failed = 0;
-
     if ($opt{'spoil'}) {
         my ($gameid, $code, $path) = @{ $rows->[0] };
         substr($path, int(length($path) / 2), 1) = 'X';
         my $err = Games::Sokoban::Solver::Replay::check($code, $path);
-        my $ok  = eval { Games::Sokoban::Solver::Path::rebuilt(Games::Sokoban::Solver::Path::level($code), 'path' => $path); 1 };
-        if (defined $err and !$ok) { say "spoil: a flipped letter in game $gameid is refused by both readings -- the gate fires" }
-        else                       { say "spoil: NOT CAUGHT (check: " . ($err // 'accepted') . ", rebuilt: " . ($ok ? 'lived' : 'died') . ')'; $failed = 1 }
+        my $ok  = eval {Games::Sokoban::Solver::Path::rebuilt(Games::Sokoban::Solver::Path::level($code), 'path' => $path); 1};
+        if (defined $err and !$ok) {say "spoil: a flipped letter in game $gameid is refused by both readings -- the gate fires"}
+        else {
+            say "spoil: NOT CAUGHT (check: " . ($err // 'accepted') . ", rebuilt: " . ($ok ? 'lived' : 'died') . ')';
+            $failed = 1;
+        }
     }
-
     for my $row (@$rows) {
         my ($gameid, $code, $path, $table) = @$row;
         ++$n{'paths'};
         my %level = Games::Sokoban::Solver::Path::level($code);
-        my $ours  = eval { Games::Sokoban::Solver::Path::rebuilt(%level, 'path' => $path) };
-        unless (defined $ours) { say "DIED  $table $gameid: " . (split /\n/, $@)[0]; ++$n{'died'}; next }
+        my $ours  = eval {Games::Sokoban::Solver::Path::rebuilt(%level, 'path' => $path)};
+        unless (defined $ours) {say "DIED  $table $gameid: " . (split /\n/, $@)[0]; ++$n{'died'}; next}
         my $orig = Games::Sokoban::Path::rebuilt(Games::Sokoban::Path::level($code), 'path' => $path);
-        if ($ours ne $orig) { say "DIFFER $table $gameid: ours " . length($ours) . ' letters, the original ' . length($orig); ++$n{'differ'} }
-        if (defined(my $err = Games::Sokoban::Solver::Replay::check($code, $path))) { say "REFUSED $table $gameid: $err"; ++$n{'refused'} }
-    }
+        if ($ours ne $orig) {
+            say "DIFFER $table $gameid: ours " . length($ours) . ' letters, the original ' . length($orig);
+            ++$n{'differ'};
+        }
+        if (defined(my $err = Games::Sokoban::Solver::Replay::check($code, $path))) {
+            say "REFUSED $table $gameid: $err";
+            ++$n{'refused'};
+        }
+    } ## end for my $row (@$rows)
     $failed = 1 if $n{'differ'} or $n{'refused'} or $n{'died'};
     exit Gate::verdict($failed, %n);
-}
+} ## end if ($opt{'what'} eq 'stored')
 
 # --what firststep
 my $rows = $db->selectall_arrayref(<<'SQL');
@@ -86,18 +92,16 @@ my $rows = $db->selectall_arrayref(<<'SQL');
       FROM bestbet b JOIN zdroj z USING (gameid) JOIN game_data d USING (gameid)
      WHERE b.path IS NOT NULL AND b.path <> ''
 SQL
-my %n = ('paths' => 0, 'refused' => 0, 'with_opening' => 0, 'fail_on_code0' => 0);
+my %n      = ('paths' => 0, 'refused' => 0, 'with_opening' => 0, 'fail_on_code0' => 0);
 my $failed = 0;
-
 if ($opt{'spoil'}) {
-    my ($with) = grep { length $_->[3] } @$rows;
+    my ($with) = grep {length $_->[3]} @$rows;
     die "spoil: no game with a forced opening in the sample\n" unless $with;
     my ($gameid, $code0, $code1, $pre, $path) = @$with;
     my $err = Games::Sokoban::Solver::Replay::check($code1, $path);
-    if (defined $err) { say "spoil: game $gameid without its forced opening is refused ($err) -- the gate fires" }
-    else              { say "spoil: NOT CAUGHT -- game $gameid replays without its opening"; $failed = 1 }
+    if   (defined $err) {say "spoil: game $gameid without its forced opening is refused ($err) -- the gate fires"}
+    else                {say "spoil: NOT CAUGHT -- game $gameid replays without its opening"; $failed = 1}
 }
-
 for my $row (@$rows) {
     my ($gameid, $code0, $code1, $pre, $path, $table) = @$row;
     ++$n{'paths'};
@@ -106,7 +110,7 @@ for my $row (@$rows) {
         say "REFUSED $table $gameid on code1: $err";
         ++$n{'refused'};
     }
-    ++$n{'fail_on_code0'} if defined Games::Sokoban::Solver::Replay::check($code0, $pre . $path);
+    ++$n{'fail_on_code0'}           if defined Games::Sokoban::Solver::Replay::check($code0, $pre . $path);
     print {*STDERR} "\r$n{'paths'}" if $n{'paths'} % 500 == 0;
 }
 print {*STDERR} "\r";

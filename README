@@ -14,10 +14,29 @@ into a distribution so that it can be installed and run anywhere.  The project
 itself keeps a database of 32 000 levels and their solutions; nothing of that
 database is needed here.
 
-STATUS
+USAGE
 
-The modules are being transplanted one by one.  This version installs and
-passes its tests but does not solve anything yet.
+   soko-solver.pl levels.xsb
+   soko-solver.pl --time 120 --optimal 300 --jobs 8 --format report levels.xsb
+   perldoc soko-solver.pl
+
+One line per level on standard output: the solution, or the word UNSOLVED or
+REFUSED; the account of the run on standard error.  The first run asks a few
+questions (threads, seconds for the race and the proof, a memory ceiling) and
+writes them to a settings file; every setting is an option as well.
+
+A level takes at most about
+
+   modes x time / jobs + the analyses + 2 x optimal   seconds
+
+(27 modes, 60 s each, 4 threads, 60 s for the proof: about ten minutes at
+the worst; most levels of ordinary size are solved in seconds).  The deadlock
+patterns of a level are computed when it is solved, under a budget of 30 s by
+default; the Sokoban project spent a year of processor time on its table, so a
+search here may take another way or fail where that project's campaign
+succeeded.
+
+From Perl: perldoc Games::Sokoban::Solver.
 
 INSTALLATION
 

@@ -30,16 +30,22 @@ use v5.42;
 use FindBin ();
 use lib "$FindBin::Bin/../lib", "$FindBin::Bin/lib";
 use Gate;
-use Getopt::Long   ();
-use Compress::Zlib ();
-use Storable       ();
+use Getopt::Long                   ();
+use Compress::Zlib                 ();
+use Storable                       ();
 use Games::Sokoban::Solver::Parser ();
 STDOUT->autoflush(1);
-
-my %opt = ('limit' => 50, 'budget' => 60, 'complete' => 0, 'gameids' => '', 'spoil' => 0, 'calibrate' => 0, 'budgets' => '10,30,60,120');
+my %opt = (
+    'limit'     => 50,
+    'budget'    => 60,
+    'complete'  => 0,
+    'gameids'   => '',
+    'spoil'     => 0,
+    'calibrate' => 0,
+    'budgets'   => '10,30,60,120'
+);
 Getopt::Long::GetOptions(\%opt, 'limit=i', 'budget=f', 'complete!', 'gameids=s', 'spoil!', 'calibrate!', 'budgets=s')
     or die "usage: eq_parser.pl [--limit N] [--budget S] [--complete] [--gameids L] [--spoil] | --calibrate [--budgets L]\n";
-
 my $db  = Gate::db('Sokoban');
 my $sql = <<'SQL';
     SELECT g.gameid, g.code_blob, g.game, d.size_tier, d.nbox
@@ -47,58 +53,66 @@ my $sql = <<'SQL';
      WHERE g.source = 'PARSER' AND g.code_blob IS NOT NULL AND g.game IS NOT NULL
 SQL
 my @rows;
+
 if (length $opt{'gameids'}) {
-    my @ids = grep { /\A\d+\z/ } split /[,\s]+/, $opt{'gameids'};
+    my @ids = grep {/\A\d+\z/} split /[,\s]+/, $opt{'gameids'};
     @rows = @{ $db->selectall_arrayref("$sql AND g.gameid IN (" . join(',', @ids) . ') ORDER BY g.gameid') };
 }
 else {
     @rows = @{ $db->selectall_arrayref("$sql AND g.gameid = 1") };
     for my $tier (1 .. 4) {
-        push @rows, @{ $db->selectall_arrayref("$sql AND d.size_tier = ? AND g.gameid <> 1 ORDER BY random() LIMIT ?", undef, $tier, $opt{'limit'}) };
+        push @rows,
+            @{
+                $db->selectall_arrayref("$sql AND d.size_tier = ? AND g.gameid <> 1 ORDER BY random() LIMIT ?",
+                    undef, $tier, $opt{'limit'})
+             };
     }
 }
-
-my %n = ('games' => 0, 'key_differ' => 0, 'blok_differ' => 0, 'blok_extra' => 0, 'blok_cut' => 0, 'complete' => 0, 'refused' => 0);
+my %n =
+    ('games' => 0, 'key_differ' => 0, 'blok_differ' => 0, 'blok_extra' => 0, 'blok_cut' => 0, 'complete' => 0, 'refused' => 0);
 my $failed = 0;
 my (%time_graph, %time_blok, %count);
-
-sub thawed ($blob) { return Storable::thaw(Compress::Zlib::uncompress($blob)) }
+sub thawed ($blob) {return Storable::thaw(Compress::Zlib::uncompress($blob))}
 
 # The bloks of one game, ours against the stored ones. Returns the counts of
 # pushes that differ although complete, and of vectors the stored table lacks.
 sub compare_bloks ($gameid, $got, $want, $report) {
-    my %done = map { $_->[0] => ($_->[2] >= $_->[1] ? 1 : 0) } @{ $report->{'blok'} };
+    my %done = map {$_->[0] => ($_->[2] >= $_->[1] ? 1 : 0)} @{ $report->{'blok'} };
     my ($differ, $extra) = (0, 0);
     my %pushes;
     for my $h ($got->{'blok'}, $want->{'blok'}) {
-        for my $bx (keys %$h) { $pushes{"$bx,$_"} = 1 for keys %{ $h->{$bx} } }
+        for my $bx (keys %$h) {$pushes{"$bx,$_"} = 1 for keys %{ $h->{$bx} }}
     }
     for my $key (sort keys %pushes) {
         my ($bx, $t) = split /,/, $key;
         my @ours   = sort @{ $got->{'blok'}{$bx}{$t}  // [] };
         my @theirs = sort @{ $want->{'blok'}{$bx}{$t} // [] };
-        my %theirs = map { $_ => 1 } @theirs;
-        my @more   = grep { !$theirs{$_} } @ours;
-        if (@more) { say "game $gameid push $bx->$t: " . scalar(@more) . ' vector(s) the stored table does not have'; ++$extra }
+        my %theirs = map  {$_ => 1} @theirs;
+        my @more   = grep {!$theirs{$_}} @ours;
+        if (@more) {say "game $gameid push $bx->$t: " . scalar(@more) . ' vector(s) the stored table does not have'; ++$extra}
         my $pattern  = $report->{'patpoz'}{$bx}{$t};
         my $complete = !defined $pattern || ($done{$pattern} // 0);    # no pattern = no bloks possible on either side
         next unless $complete;
         next if join("\0", @ours) eq join("\0", @theirs);
-        say "game $gameid push $bx->$t (pattern " . ($pattern // '-') . ' complete): ours ' . scalar(@ours) . ' vectors, stored ' . scalar(@theirs);
+        say "game $gameid push $bx->$t (pattern "
+            . ($pattern // '-')
+            . ' complete): ours '
+            . scalar(@ours)
+            . ' vectors, stored '
+            . scalar(@theirs);
         ++$differ;
-    }
+    } ## end for my $key (sort keys ...)
     return ($differ, $extra);
-}
+} ## end sub compare_bloks
 
 # The vectors of a blok table, counted.
 sub vectors ($blok) {
     my $n = 0;
-    for my $bx (keys %$blok) { $n += scalar @{ $blok->{$bx}{$_} } for keys %{ $blok->{$bx} } }
+    for my $bx (keys %$blok) {$n += scalar @{ $blok->{$bx}{$_} } for keys %{ $blok->{$bx} }}
     return $n;
 }
-
 if ($opt{'calibrate'}) {
-    my @budgets = grep { /\A\d+(?:\.\d+)?\z/ } split /,/, $opt{'budgets'};
+    my @budgets = grep {/\A\d+(?:\.\d+)?\z/} split /,/, $opt{'budgets'};
     die "calibrate: --budgets needs numbers\n" unless @budgets;
     my %sum;    # tier -> budget -> [games, share of vectors summed, patterns, patterns complete, games complete]
     my $i = 0;
@@ -114,12 +128,13 @@ if ($opt{'calibrate'}) {
             $s->[0]++;
             $s->[1] += $stored ? $ours / $stored : 1;
             $s->[2] += $report{'patterns'};
-            $s->[3] += grep { $_->[2] >= $_->[1] } @{ $report{'blok'} };
+            $s->[3] += grep {$_->[2] >= $_->[1]} @{ $report{'blok'} };
             $s->[4] += $report{'blok_complete'};
-            printf {*STDERR} "\r%d  game %d tier %d nbox %d budget %s: %d of %d vectors, %s", ++$i, $gameid, $tier, $nbox, $budget, $ours, $stored,
+            printf {*STDERR} "\r%d  game %d tier %d nbox %d budget %s: %d of %d vectors, %s", ++$i, $gameid, $tier, $nbox,
+                $budget, $ours, $stored,
                 ($report{'blok_complete'} ? 'complete' : 'cut');
         }
-    }
+    } ## end for my $row (@rows)
     print {*STDERR} "\n";
     say join("\t", 'tier', 'budget', 'games', 'vectors_share', 'patterns_complete_share', 'games_complete');
     for my $tier (sort keys %sum) {
@@ -129,20 +144,20 @@ if ($opt{'calibrate'}) {
         }
     }
     exit 0;
-}
-
+} ## end if ($opt{'calibrate'})
 if ($opt{'spoil'}) {
     my ($gameid, $code_blob, $game_blob) = @{ $rows[0] };
     my $code = thawed($code_blob);
     my %got  = Games::Sokoban::Solver::Parser::parse($code, 'blok_budget' => 0);
-    my ($bx) = sort { $a <=> $b } keys %{ $got{'cm'} };
-    my ($t)  = sort { $a <=> $b } keys %{ $got{'cm'}{$bx} };
+    my ($bx) = sort {$a <=> $b} keys %{ $got{'cm'} };
+    my ($t)  = sort {$a <=> $b} keys %{ $got{'cm'}{$bx} };
     delete $got{'cm'}{$bx}{$t};
     my $want = thawed($game_blob);
-    if (Gate::canon($got{'cm'}) ne Gate::canon($want->{'cm'})) { say "spoil: a removed push of game $gameid is reported -- the gate fires" }
-    else                                                           { say 'spoil: NOT CAUGHT'; $failed = 1 }
+    if (Gate::canon($got{'cm'}) ne Gate::canon($want->{'cm'})) {
+        say "spoil: a removed push of game $gameid is reported -- the gate fires";
+    }
+    else {say 'spoil: NOT CAUGHT'; $failed = 1}
 }
-
 for my $row (@rows) {
     my ($gameid, $code_blob, $game_blob, $tier, $nbox) = @$row;
     ++$n{'games'};
@@ -150,8 +165,8 @@ for my $row (@rows) {
     my $want   = thawed($game_blob);
     my $budget = ($opt{'complete'} or $nbox <= 8) ? undef : $opt{'budget'};
     my %report;
-    my %fresh = eval { Games::Sokoban::Solver::Parser::parse($code, 'blok_budget' => $budget, 'report' => \%report) };
-    unless (%fresh) { say "REFUSED $gameid: " . (split /\n/, $@)[0]; ++$n{'refused'}; next }
+    my %fresh = eval {Games::Sokoban::Solver::Parser::parse($code, 'blok_budget' => $budget, 'report' => \%report)};
+    unless (%fresh) {say "REFUSED $gameid: " . (split /\n/, $@)[0]; ++$n{'refused'}; next}
 
     # Compared as the engines get it: through the blob and back, as the stored
     # one was. A number that is an integer from ** and a float from pow() are
@@ -160,24 +175,21 @@ for my $row (@rows) {
     $time_graph{$tier} += $report{'seconds'}{'graph'} + $report{'seconds'}{'rest'};
     $time_blok{$tier}  += $report{'seconds'}{'blok'};
     ++$count{$tier};
-
-    my %skip = map { $_ => 1 } qw(blok gate has_gate homes);
-    my @keys = grep { !$skip{$_} } sort keys %{ { %got, %$want } };
-    my @bad  = grep { Gate::canon($got{$_}) ne Gate::canon($want->{$_}) } @keys;
-    if (@bad) { say "game $gameid: keys differ (@bad)"; ++$n{'key_differ'} }
-    my @left = grep { exists $got{$_} } qw(gate has_gate homes);
-    if (@left) { say "game $gameid: still writes @left"; ++$n{'key_differ'} }
-
+    my %skip = map  {$_ => 1} qw(blok gate has_gate homes);
+    my @keys = grep {!$skip{$_}} sort keys %{ { %got, %$want } };
+    my @bad  = grep {Gate::canon($got{$_}) ne Gate::canon($want->{$_})} @keys;
+    if (@bad) {say "game $gameid: keys differ (@bad)"; ++$n{'key_differ'}}
+    my @left = grep {exists $got{$_}} qw(gate has_gate homes);
+    if (@left) {say "game $gameid: still writes @left"; ++$n{'key_differ'}}
     my ($differ, $extra) = compare_bloks($gameid, \%got, $want, \%report);
     $n{'blok_differ'} += $differ;
     $n{'blok_extra'}  += $extra;
-    if   ($report{'blok_complete'}) { ++$n{'complete'} }
-    else                            { ++$n{'blok_cut'} }
+    if   ($report{'blok_complete'}) {++$n{'complete'}}
+    else                            {++$n{'blok_cut'}}
     printf {*STDERR} "\r%d  game %d tier %d nbox %d: %d patterns, bloks %s in %.1f s", $n{'games'}, $gameid, $tier, $nbox,
         $report{'patterns'}, ($report{'blok_complete'} ? 'complete' : 'CUT'), $report{'seconds'}{'blok'};
-}
+} ## end for my $row (@rows)
 print {*STDERR} "\n";
-
 say 'Parser time per game by tier (seconds): tier  n  without bloks  bloks';
 for my $tier (sort keys %count) {
     printf "  %d %4d %8.2f %8.2f\n", $tier, $count{$tier}, $time_graph{$tier} / $count{$tier}, $time_blok{$tier} / $count{$tier};

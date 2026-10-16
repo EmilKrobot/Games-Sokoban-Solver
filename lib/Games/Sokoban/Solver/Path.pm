@@ -41,11 +41,9 @@ package Games::Sokoban::Solver::Path;
 # Lineage: Games::Sokoban::Path 0.01 of the Sokoban project (2026-10-12), held
 # there on every stored path of four tables to a second writing that shares no
 # code with it.
-
 use v5.42;
 use warnings FATAL => 'uninitialized';
 use Carp ();
-
 our $VERSION = '0.01';
 
 =head1 NAME
@@ -140,7 +138,7 @@ sub level ($code) {
         push @floor, $cell if $digit ne '9' and $digit ne '1';
         push @goals, $cell if $digit eq '3' or $digit eq '7' or $digit eq '8';
         push @boxes, $cell if $digit eq '4' or $digit eq '7';
-        $player = $cell    if $digit eq '5' or $digit eq '6' or $digit eq '8';
+        $player = $cell if $digit eq '5' or $digit eq '6' or $digit eq '8';
     }
     Carp::confess('the board has no player') unless defined $player;
     return ('width' => length $rows[0], 'floor' => \@floor, 'goals' => \@goals, 'boxes' => \@boxes, 'player' => $player);
@@ -167,7 +165,7 @@ sub reach ($free, $box, $width, $from, $target = -1) {
         }
     }
     return \@came;
-}
+} ## end sub reach
 
 # The letters of a shortest walk from $from to $target, '' when the two are the
 # same cell, undef when there is no way.
@@ -183,7 +181,7 @@ sub walk ($free, $box, $width, $from, $target) {
 
 sub rebuilt (%level) {
     my ($path, $width, $start) = @level{ 'path', 'width', 'player' };
-    my (@free, @goal, @box);
+    my (@free, @goal,  @box);
     $free[$_] = 1 for @{ $level{'floor'} };
     $goal[$_] = 1 for @{ $level{'goals'} };
     $box[$_]  = 1 for @{ $level{'boxes'} };
@@ -193,37 +191,45 @@ sub rebuilt (%level) {
     # boxes stand alike. A position is a number of pushes made, 0 the start.
     my @pushes;
     my $man  = $start;
-    my $open = grep {!$box[$_]} @{ $level{'goals'} };    # goals without a box
+    my $open = grep {!$box[$_]} @{ $level{'goals'} };       # goals without a box
     Carp::confess('the level is solved before the first step') unless $open;
-    my $layout = '';                                     # the boxes, a bit a cell
-    vec($layout, $#free, 1) = 0;                         # as long as the board from the start: the same boxes, the same string
-    vec($layout, $_, 1) = 1 for @{ $level{'boxes'} };
-    my %alike = ($layout => [0]);                        # the boxes => the positions that have them
+    my $layout = '';                                        # the boxes, a bit a cell
+    vec($layout, $#free, 1) = 0;                            # as long as the board from the start: the same boxes, the same string
+    vec($layout, $_, 1)     = 1 for @{ $level{'boxes'} };
+    my %alike = ($layout => [0]);                           # the boxes => the positions that have them
     my $twice = 0;
+
     for my $at (0 .. length($path) - 1) {
         my $letter = substr($path, $at, 1);
         my $delta  = $delta{ lc $letter } // Carp::confess("the path does not play: letter $at is '$letter'");
         my $column = $man % $width;
         my $to     = $man + $delta;
         Carp::confess("the path does not play: letter $at '$letter' steps into a wall")
-            if $to < 0 or !$free[$to] or $delta == -1 and $column == 0 or $delta == 1 and $column == $width - 1;
+            if $to < 0
+            or !$free[$to]
+            or $delta == -1 and $column == 0
+            or $delta == 1  and $column == $width - 1;
         if ($box[$to]) {
             my $beyond = $to + $delta;
             Carp::confess("the path does not play: letter $at '$letter' pushes the box on cell $to against a wall or another box")
-                if $beyond < 0 or !$free[$beyond] or $box[$beyond] or $delta == -1 and $to % $width == 0 or $delta == 1 and $to % $width == $width - 1;
+                if $beyond < 0
+                or !$free[$beyond]
+                or $box[$beyond]
+                or $delta == -1 and $to % $width == 0
+                or $delta == 1  and $to % $width == $width - 1;
             $box[$to]     = 0;
             $box[$beyond] = 1;
-            vec($layout, $to,     1) = 0;
+            vec($layout, $to, 1)     = 0;
             vec($layout, $beyond, 1) = 1;
             ++$open if $goal[$to];
             --$open if $goal[$beyond];
             push @pushes, [$to, $beyond];
             if (my $positions = $alike{$layout}) {push @$positions, scalar @pushes; $twice = 1}
-            else                                {$alike{$layout} = [scalar @pushes]}
-        }
+            else                                 {$alike{$layout} = [scalar @pushes]}
+        } ## end if ($box[$to])
         $man = $to;
         last unless $open;
-    }
+    } ## end for my $at (0 .. length...)
     Carp::confess('the path does not solve the level: it ends with a goal still empty') if $open;
 
     # 2 -- the cheapest way through those pushes when a stretch between two
@@ -234,11 +240,11 @@ sub rebuilt (%level) {
     if ($twice) {
         my %later;                 # a position => the later ones with the same boxes
         for my $positions (grep {@$_ > 1} values %alike) {
-            $later{ $positions->[$_] } = [@{$positions}[ $_ + 1 .. $#$positions ]] for 0 .. $#$positions - 1;
+            $later{ $positions->[$_] } = [@{$positions}[$_ + 1 .. $#$positions]] for 0 .. $#$positions - 1;
         }
-        @box = ();
+        @box     = ();
         $box[$_] = 1 for @{ $level{'boxes'} };
-        $man = $start;
+        $man     = $start;
         my @price = (0);           # the steps to a position
         my @before;                # the position the push into a position was made from
         for my $position (0 .. $#pushes) {
@@ -253,31 +259,34 @@ sub rebuilt (%level) {
                             // Carp::confess("the player cannot get from cell $man to the push of the box on cell $from"));
                 }
                 else {
-                    unless (defined $came->[$stance]) {      # another part of the floor: no offer
-                        Carp::confess("the player cannot get from cell $man to the push of the box on cell $from") if $next == $position;
+                    unless (defined $came->[$stance]) {    # another part of the floor: no offer
+                        Carp::confess("the player cannot get from cell $man to the push of the box on cell $from")
+                            if $next == $position;
                         next;
                     }
                     $steps = 0;
                     for (my $at = $stance; $at != $man; $at = $came->[$at]) {++$steps}
                 }
                 my $price = $price[$position] + $steps + 1;
-                next if defined $price[ $next + 1 ] and ($price > $price[ $next + 1 ] or $price == $price[ $next + 1 ] and $next != $position);
-                $price[ $next + 1 ]  = $price;
-                $before[ $next + 1 ] = $position;
-            }
+                next
+                    if defined $price[$next + 1]
+                    and ($price > $price[$next + 1] or $price == $price[$next + 1] and $next != $position);
+                $price[$next + 1]  = $price;
+                $before[$next + 1] = $position;
+            } ## end for my $next ($position...)
             my ($from, $to) = @{ $pushes[$position] };
             $box[$from] = 0;
             $box[$to]   = 1;
             $man        = $from;
-        } ## end for my $position (0 .. $#pushes)
+        } ## end for my $position (0 .. ...)
         @kept = ();
         for (my $position = @pushes; $position > 0; $position = $before[$position]) {unshift @kept, $position - 1}
     } ## end if ($twice)
 
     # 3 -- the pushes that stay, from the start, a shortest walk to each
-    @box = ();
+    @box     = ();
     $box[$_] = 1 for @{ $level{'boxes'} };
-    $man = $start;
+    $man     = $start;
     my %letter = (-1 => 'L', 1 => 'R', $width => 'D', -$width => 'U');
     my $out    = '';
     for my $push (@pushes[@kept]) {
@@ -291,5 +300,4 @@ sub rebuilt (%level) {
     }
     return $out;
 } ## end sub rebuilt
-
 1;

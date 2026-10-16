@@ -9,10 +9,8 @@ package Games::Sokoban::Solver::Heap;
 # Only what the engines call is here: new, add, next, peek, size.
 #
 # Lineage: Games::Numeric 2.11 (Pex) of the Sokoban project.
-
 use v5.42;
 use Array::Heap ('pop_heap', 'push_heap');
-
 our $VERSION = '0.01';
 
 sub new ($class) {
@@ -36,9 +34,7 @@ sub next ($self) {
 sub size ($self) {
     return scalar @$self;
 }
-
 1;
-
 __END__
 
 =head1 NAME

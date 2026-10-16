@@ -5,14 +5,13 @@
 # threads where this perl has them.
 use v5.42;
 use Test::More;
-use Config ();
-use File::Temp ();
-use IPC::Open3 ();
-use Symbol ();
-use JSON::PP ();
+use Config                         ();
+use File::Temp                     ();
+use IPC::Open3                     ();
+use Symbol                         ();
+use JSON::PP                       ();
 use Games::Sokoban::Solver::Level  ();
 use Games::Sokoban::Solver::Replay ();
-
 my $PROG = 'bin/soko-solver.pl';
 my $tmp  = File::Temp->newdir;
 my $dir  = "$tmp";
@@ -21,6 +20,7 @@ my $dir  = "$tmp";
 # is the text for its standard input. STDERR goes into a file, not a pipe: two
 # pipes read one after the other deadlock once the second fills up.
 my $runs = 0;
+
 sub run_raw (@args) {
     my $stdin = ref $args[-1] ? ${ pop @args } : undef;
     my $o     = Symbol::gensym();
@@ -43,14 +43,13 @@ sub run_raw (@args) {
     close $ef;
     s/\r\n/\n/g for $out, $err;    # a pipe on Windows carries CRLF
     return ($out, $err, $exit);
-}
-sub run (@args) { return run_raw('--no-ini', @args) }
-
+} ## end sub run_raw
+sub run (@args) {return run_raw('--no-ini', @args)}
 open my $fh, '<', 't/data/micro.xsb' or die $!;
-my $text = do { local $/; <$fh> };
+my $text = do {local $/; <$fh>};
 close $fh;
 my @levels = Games::Sokoban::Solver::Level::read($text);
-my @code1  = map { (Games::Sokoban::Solver::Level::normalize($_->{'rows'}))[1] } @levels;
+my @code1  = map {(Games::Sokoban::Solver::Level::normalize($_->{'rows'}))[1]} @levels;
 
 # --- the plain run ----------------------------------------------------------------
 {
@@ -62,63 +61,63 @@ my @code1  = map { (Games::Sokoban::Solver::Level::normalize($_->{'rows'}))[1] }
         like($lines[$i], qr/\A[udlrUDLR]+\z/, "line " . ($i + 1) . " is a path");
         is(Games::Sokoban::Solver::Replay::check($code1[$i], $lines[$i]), undef, "... and plays on '$levels[$i]{'title'}'");
     }
-    like($err, qr/^soko-solver\.pl 0\.01: 4 levels, 27 modes/m, 'the banner');
-    like($err, qr/no threads/, 'the banner says no threads');
+    like($err, qr/^soko-solver\.pl 0\.01: 4 levels, 27 modes/m,  'the banner');
+    like($err, qr/no threads/,                                   'the banner says no threads');
     like($err, qr/^\[1\/4\] "One box, a corner to walk round"/m, 'a line per level on STDERR');
-    like($err, qr/^done: 4 solved \(4 proved\)/m, 'the tally');
+    like($err, qr/^done: 4 solved \(4 proved\)/m,                'the tally');
     unlike($err, qr/isn't numeric/, 'no "isn\'t numeric" anywhere');
 }
 
 # --- --level, --quiet, --show, --out ----------------------------------------------------
 {
-    my ($out, $err, $exit) = run('--jobs', 1, '--time', 10, '--optimal', 5, '--level', '2,4', '--quiet', '--out', "$dir/paths.txt", 't/data/micro.xsb');
+    my ($out, $err, $exit) =
+        run('--jobs', 1, '--time', 10, '--optimal', 5, '--level', '2,4', '--quiet', '--out', "$dir/paths.txt",
+            't/data/micro.xsb');
     is($exit, 0, '--level 2,4: exit 0');
     my @lines = split /\n/, $out;
-    is(scalar @lines, 2, 'two lines');
+    is(scalar @lines,                                               2,     'two lines');
     is(Games::Sokoban::Solver::Replay::check($code1[1], $lines[0]), undef, 'the first is level 2');
     is(Games::Sokoban::Solver::Replay::check($code1[3], $lines[1]), undef, 'the second is level 4');
-    is($err, '', '--quiet: STDERR empty');
+    is($err,                                                        '',    '--quiet: STDERR empty');
     open my $fh, '<', "$dir/paths.txt" or die $!;
-    my $copy = do { local $/; <$fh> };
+    my $copy = do {local $/; <$fh>};
     close $fh;
     is($copy, $out, '--out holds the same lines');
-
     ($out, $err, $exit) = run('--jobs', 1, '--time', 10, '--optimal', 0, '--level', 3, '--show', 't/data/micro.xsb');
     is($exit, 0, '--show: exit 0');
-    like($err, qr/^#\@\$\.#$/m, 'the level is drawn on STDERR');
-    like($err, qr/^R$/m, 'and the solution');
+    like($err, qr/^#\@\$\.#$/m,                   'the level is drawn on STDERR');
+    like($err, qr/^R$/m,                          'and the solution');
     like($err, qr/^done: 1 solved \(0 proved\)/m, '--optimal 0: not proved');
 }
 
 # --- the formats ---------------------------------------------------------------------
 {
-    my ($out, $err, $exit) = run('--jobs', 1, '--time', 10, '--optimal', 5, '--level', '1-2', '--format', 'sok', 't/data/micro.xsb');
+    my ($out, $err, $exit) =
+        run('--jobs', 1, '--time', 10, '--optimal', 5, '--level', '1-2', '--format', 'sok', 't/data/micro.xsb');
     is($exit, 0, 'sok: exit 0');
     like($out, qr/\AOne box, a corner to walk round\n#######\n/, 'sok: the title and the level');
     my @sol = $out =~ /^Solution: (\S+)$/mg;
-    is(scalar @sol, 2, 'sok: two solutions');
+    is(scalar @sol,                                               2,     'sok: two solutions');
     is(Games::Sokoban::Solver::Replay::check($code1[1], $sol[1]), undef, 'sok: the second plays');
-
     ($out, $err, $exit) = run('--jobs', 1, '--time', 10, '--optimal', 5, '--level', 2, '--format', 'report', 't/data/micro.xsb');
     is($exit, 0, 'report: exit 0');
     my @lines = split /\n/, $out;
     like($lines[0], qr/\A# level\ttitle\tstatus\tmoves/, 'report: the header');
     my @col = split /\t/, $lines[1];
-    is($col[0], 2, 'report: the level number');
-    is($col[2], 'SOLVED', 'report: SOLVED');
+    is($col[0], 2,               'report: the level number');
+    is($col[2], 'SOLVED',        'report: SOLVED');
     is($col[3], length $col[-1], 'report: moves = the length of the path');
-    is($col[6], 1, 'report: proved');
-    is($col[9], 'DIAL', 'report: the optimal mode');
-
+    is($col[6], 1,               'report: proved');
+    is($col[9], 'DIAL',          'report: the optimal mode');
     ($out, $err, $exit) = run('--jobs', 1, '--time', 10, '--optimal', 5, '--level', 4, '--format', 'json', 't/data/micro.xsb');
     is($exit, 0, 'json: exit 0');
     my $j = JSON::PP->new->decode($out);
-    is($j->{'status'}, 'SOLVED', 'json: SOLVED');
-    is($j->{'threads'}, 'off', 'json: threads off');
-    is($j->{'moves'}, length $j->{'path'}, 'json: moves');
-    is($j->{'boxes'}, 3, 'json: boxes');
-    is($j->{'first'}{'reason'}, 'SOLVED', 'json: the first solution');
-    is($j->{'best'}{'proved'}, 1, 'json: proved');
+    is($j->{'status'},          'SOLVED',            'json: SOLVED');
+    is($j->{'threads'},         'off',               'json: threads off');
+    is($j->{'moves'},           length $j->{'path'}, 'json: moves');
+    is($j->{'boxes'},           3,                   'json: boxes');
+    is($j->{'first'}{'reason'}, 'SOLVED',            'json: the first solution');
+    is($j->{'best'}{'proved'},  1,                   'json: proved');
     ok(ref $j->{'first'}{'answers'} eq 'ARRAY' && @{ $j->{'first'}{'answers'} } >= 1, 'json: the answers');
 }
 
@@ -143,12 +142,12 @@ XSB
     my ($out, $err, $exit) = run('--jobs', 1, '--time', 10, '--optimal', 5, '-', \$file);
     is($exit, 1, 'a refused level: exit 1');
     my @lines = split /\n/, $out;
-    is(scalar @lines, 3, 'three lines all the same');
-    is($lines[1], 'REFUSED', 'the second is REFUSED');
-    like($lines[0], qr/\A[udlrUDLR]+\z/, 'the first solved');
-    like($lines[2], qr/\A[udlrUDLR]+\z/, 'the third solved: the run went on');
-    like($err, qr/REFUSED: 2 players \(there must be one\)$/m, 'STDERR says why, without the place in the code');
-    like($err, qr/^done: 2 solved \(2 proved\), 0 unsolved, 1 refused/m, 'the tally counts it');
+    is(scalar @lines, 3,         'three lines all the same');
+    is($lines[1],     'REFUSED', 'the second is REFUSED');
+    like($lines[0], qr/\A[udlrUDLR]+\z/,                                      'the first solved');
+    like($lines[2], qr/\A[udlrUDLR]+\z/,                                      'the third solved: the run went on');
+    like($err,      qr/REFUSED: 2 players \(there must be one\)$/m,           'STDERR says why, without the place in the code');
+    like($err,      qr/^done: 2 solved \(2 proved\), 0 unsolved, 1 refused/m, 'the tally counts it');
 }
 
 # --- an unsolved level: UNSOLVED in every format, never a path --------------------------
@@ -156,8 +155,8 @@ XSB
 {
     my @args = ('--jobs', 1, '--time', 0.0001, '--optimal', 0, '--modes', 'FF_BASE', '--level', 4, 't/data/micro.xsb');
     my ($out, $err, $exit) = run(@args);
-    is($exit, 1, 'unsolved: exit 1');
-    is($out, "UNSOLVED\n", 'path format: the word UNSOLVED');
+    is($exit, 1,            'unsolved: exit 1');
+    is($out,  "UNSOLVED\n", 'path format: the word UNSOLVED');
     like($err, qr/^  UNSOLVED /m, 'STDERR says UNSOLVED');
     ($out, $err, $exit) = run(@args, '--format', 'json');
     my $j = JSON::PP->new->decode($out);
@@ -196,15 +195,15 @@ XSB
 
 # --- the settings file: --init with answers from a file, then read by the next run --------
 {
-    my $ini = "$dir/sub/soko-solver.ini";
-    my $answers = "2\n7\n3\n0\n0\n";    # jobs, time, optimal, maxgb, berkeley
+    my $ini     = "$dir/sub/soko-solver.ini";
+    my $answers = "2\n7\n3\n0\n0\n";            # jobs, time, optimal, maxgb, berkeley
     my ($out, $err, $exit) = run_raw('--ini', $ini, '--init', '--level', 3, '--jobs', 1, 't/data/micro.xsb', \$answers);
     is($exit, 0, '--init: exit 0') or diag($err);
     ok(-f $ini, 'the ini was written');
-    like($err, qr/How many threads/, 'the questions were asked');
-    like($err, qr/settings written to/, 'and the file announced');
+    like($err, qr/How many threads/,          'the questions were asked');
+    like($err, qr/settings written to/,       'and the file announced');
     like($err, qr/7 s a mode, 3 s the proof/, 'the run used the answers');
-    like($out, qr/\AR\n\z/, 'and solved the level');
+    like($out, qr/\AR\n\z/,                   'and solved the level');
 
     # the next run reads the file; the command line still wins
     ($out, $err, $exit) = run_raw('--ini', $ini, '--level', 3, '--jobs', 1, '--optimal', 4, 't/data/micro.xsb');
@@ -218,11 +217,10 @@ SKIP: {
     skip 'this perl has no ithreads', 5 unless $Config::Config{'useithreads'};
     my ($out, $err, $exit) = run('--jobs', 3, '--time', 10, '--optimal', 5, '--format', 'json', 't/data/micro.xsb');
     is($exit, 0, 'threads: exit 0') or diag($err);
-    my @j = map { JSON::PP->new->decode($_) } split /\n/, $out;
-    is(scalar @j, 4, 'threads: four objects');
-    is($j[0]{'threads'}, 'on', 'threads: on');
-    is(scalar(grep { $_->{'status'} eq 'SOLVED' } @j), 4, 'threads: all solved');
+    my @j = map {JSON::PP->new->decode($_)} split /\n/, $out;
+    is(scalar @j,                                    4,    'threads: four objects');
+    is($j[0]{'threads'},                             'on', 'threads: on');
+    is(scalar(grep {$_->{'status'} eq 'SOLVED'} @j), 4,    'threads: all solved');
     like($err, qr/3 threads/, 'the banner says 3 threads');
 }
-
 done_testing;

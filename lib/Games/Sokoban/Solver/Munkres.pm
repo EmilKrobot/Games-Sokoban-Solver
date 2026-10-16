@@ -50,9 +50,7 @@ package Games::Sokoban::Solver::Munkres;
 # as deliberate elsewhere.
 #
 # Lineage: Games::Munkres 0.21 of the Sokoban project (2026-08-23).
-
 use v5.42;
-
 our $VERSION = '0.01';
 
 # Rows and columns are numbered from 1 inside, with column 0 as the scratch slot
@@ -80,7 +78,7 @@ sub assign ($rmat, $out = undef) {
     # not necessarily the minimum and the whole argument collapses.
     # The row is scanned WHOLE even after its zero is found: the non-negativity
     # that licenses the shortcut has to hold for the entries we never pick, too.
-  FAST: {
+FAST: {
         my (@rowof, @colused);
         for my $i (0 .. $n - 1) {
             my $row = $rmat->[$i];
@@ -96,14 +94,12 @@ sub assign ($rmat, $out = undef) {
         }
         @$out = @rowof if $out;
         return 0;
-    }
-
+    } ## end FAST:
     my $INF = 9**15;
     my @u   = (0) x ($n + 1);
     my @v   = (0) x ($n + 1);
     my @p   = (0) x ($n + 1);
     my @way = (0) x ($n + 1);
-
     for my $i (1 .. $n) {
         $p[0] = $i;
         my $j0   = 0;
@@ -115,21 +111,21 @@ sub assign ($rmat, $out = undef) {
         do {
             $used[$j0] = 1;
             my $i0    = $p[$j0];
-            my $row   = $rmat->[ $i0 - 1 ];
+            my $row   = $rmat->[$i0 - 1];
             my $delta = $INF;
             my $j1    = 0;
             for my $j (1 .. $n) {
                 next if $used[$j];
-                my $cur = $row->[ $j - 1 ] - $u[$i0] - $v[$j];
-                if ($cur < $minv[$j])   { $minv[$j] = $cur;      $way[$j] = $j0 }
-                if ($minv[$j] < $delta) { $delta    = $minv[$j]; $j1      = $j }
+                my $cur = $row->[$j - 1] - $u[$i0] - $v[$j];
+                if ($cur < $minv[$j]) {$minv[$j] = $cur; $way[$j] = $j0}
+                if ($minv[$j] < $delta) {$delta = $minv[$j]; $j1 = $j}
             }
 
             # re-potentiate so the chosen edge becomes tight and every edge
             # already in the tree stays tight
             for my $j (0 .. $n) {
-                if ($used[$j]) { $u[ $p[$j] ] += $delta; $v[$j] -= $delta }
-                else           { $minv[$j] -= $delta }
+                if ($used[$j]) {$u[$p[$j]] += $delta; $v[$j] -= $delta}
+                else           {$minv[$j] -= $delta}
             }
             $j0 = $j1;
         } while ($p[$j0] != 0);
@@ -139,15 +135,14 @@ sub assign ($rmat, $out = undef) {
         do {
             my $j1 = $way[$j0];
             $p[$j0] = $p[$j1];
-            $j0     = $j1;
+            $j0 = $j1;
         } while ($j0);
     } ## end for my $i (1 .. $n)
-
     my $value = 0;
     for my $j (1 .. $n) {
         my $i = $p[$j];
-        $value += $rmat->[ $i - 1 ][ $j - 1 ];
-        $out->[ $i - 1 ] = $j - 1 if $out;    # row -> column, the documented direction
+        $value += $rmat->[$i - 1][$j - 1];
+        $out->[$i - 1] = $j - 1 if $out;    # row -> column, the documented direction
     }
     return $value;
 } ## end sub assign
@@ -192,15 +187,13 @@ sub assign ($rmat, $out = undef) {
 # Every other row keeps its costs, its potential and its tight matched edge, so
 # the partial matching stays optimal for the rows it covers; one augmenting path
 # completes it. The result is the exact minimum, not an approximation of it.
-
 # Build a reusable context from the base matrix: it solves it once and keeps
 # the potentials and the matching. The matrix is held by reference and must not
 # be modified by the caller afterwards -- with_row reads it for every row but r.
 sub context ($rmat) {
     my $n = scalar @$rmat;
-    my $c = {'n' => $n, 'rows' => $rmat, 'u' => [], 'v' => [], 'p' => [], 'weight' => 0};
+    my $c = { 'n' => $n, 'rows' => $rmat, 'u' => [], 'v' => [], 'p' => [], 'weight' => 0 };
     return $c unless $n;
-
     my @out;
     $c->{'weight'} = assign($rmat, \@out);
 
@@ -213,20 +206,19 @@ sub context ($rmat) {
     # however many rows are then tried against it.
     my $zero = 1;
     for my $i (0 .. $n - 1) {
-        $zero = 0, last if $rmat->[$i][ $out[$i] ] != 0;
+        $zero = 0, last if $rmat->[$i][$out[$i]] != 0;
     }
     if ($zero) {
-        $c->{'u'} = [(0) x ($n + 1)];
-        $c->{'v'} = [(0) x ($n + 1)];
-        $c->{'p'} = [(0) x ($n + 1)];
-        $c->{'p'}[ $out[$_] + 1 ] = $_ + 1 for 0 .. $n - 1;
+        $c->{'u'}               = [(0) x ($n + 1)];
+        $c->{'v'}               = [(0) x ($n + 1)];
+        $c->{'p'}               = [(0) x ($n + 1)];
+        $c->{'p'}[$out[$_] + 1] = $_ + 1 for 0 .. $n - 1;
         return $c;
     }
-
     (my $w, $c->{'u'}, $c->{'v'}, $c->{'p'}) = _solve_keeping_state($rmat, $n);
     $c->{'weight'} = $w;
     return $c;
-}
+} ## end sub context
 
 # The base solve, in the form that keeps (u, v, p) instead of throwing them
 # away. Same augmenting-path core as assign(); factored out rather than shared
@@ -237,12 +229,11 @@ sub _solve_keeping_state ($rows, $n) {
     my @v   = (0) x ($n + 1);
     my @p   = (0) x ($n + 1);
     my @way = (0) x ($n + 1);
-
     for my $i (1 .. $n) {
         _augment($rows, $n, \@u, \@v, \@p, \@way, $i, $INF);
     }
     my $value = 0;
-    $value += $rows->[ $p[$_] - 1 ][ $_ - 1 ] for 1 .. $n;
+    $value += $rows->[$p[$_] - 1][$_ - 1] for 1 .. $n;
     return ($value, \@u, \@v, \@p);
 }
 
@@ -254,33 +245,31 @@ sub _augment ($rows, $n, $u, $v, $p, $way, $i, $INF) {
     my $j0   = 0;
     my @minv = ($INF) x ($n + 1);
     my @used = (0) x ($n + 1);
-
     do {
         $used[$j0] = 1;
         my $i0    = $p->[$j0];
-        my $row   = $rows->[ $i0 - 1 ];
+        my $row   = $rows->[$i0 - 1];
         my $delta = $INF;
         my $j1    = 0;
         for my $j (1 .. $n) {
             next if $used[$j];
-            my $cur = $row->[ $j - 1 ] - $u->[$i0] - $v->[$j];
-            if ($cur < $minv[$j])   { $minv[$j] = $cur;      $way->[$j] = $j0 }
-            if ($minv[$j] < $delta) { $delta    = $minv[$j]; $j1        = $j }
+            my $cur = $row->[$j - 1] - $u->[$i0] - $v->[$j];
+            if ($cur < $minv[$j]) {$minv[$j] = $cur; $way->[$j] = $j0}
+            if ($minv[$j] < $delta) {$delta = $minv[$j]; $j1 = $j}
         }
         for my $j (0 .. $n) {
-            if ($used[$j]) { $u->[ $p->[$j] ] += $delta; $v->[$j] -= $delta }
-            else           { $minv[$j] -= $delta }
+            if ($used[$j]) {$u->[$p->[$j]] += $delta; $v->[$j] -= $delta}
+            else           {$minv[$j] -= $delta}
         }
         $j0 = $j1;
     } while ($p->[$j0] != 0);
-
     do {
         my $j1 = $way->[$j0];
         $p->[$j0] = $p->[$j1];
-        $j0       = $j1;
+        $j0 = $j1;
     } while ($j0);
     return;
-}
+} ## end sub _augment
 
 # The minimum cost of the base problem with row $r (0-based) replaced by
 # $newrow. The context is NOT modified, so the same context serves any number of
@@ -293,10 +282,9 @@ sub with_row ($c, $r, $newrow, $out = undef) {
     # the changed row spliced in by reference: n pointer copies, not n*n numbers
     my @rows = @{ $c->{'rows'} };
     $rows[$r] = $newrow;
-
-    my @u = @{ $c->{'u'} };
-    my @v = @{ $c->{'v'} };
-    my @p = @{ $c->{'p'} };
+    my @u   = @{ $c->{'u'} };
+    my @v   = @{ $c->{'v'} };
+    my @p   = @{ $c->{'p'} };
     my @way = (0) x ($n + 1);
     my $INF = 9**15;
 
@@ -305,30 +293,26 @@ sub with_row ($c, $r, $newrow, $out = undef) {
     # value the column potentials still allow
     my $min = $INF;
     for my $j (1 .. $n) {
-        my $cur = $newrow->[ $j - 1 ] - $v[$j];
+        my $cur = $newrow->[$j - 1] - $v[$j];
         $min = $cur if $cur < $min;
     }
-    $u[ $r + 1 ] = $min;
+    $u[$r + 1] = $min;
 
     # drop row r's old edge; its column becomes the free one the augmentation
     # will fill
     for my $j (1 .. $n) {
         if ($p[$j] == $r + 1) {$p[$j] = 0; last}
     }
-
     _augment(\@rows, $n, \@u, \@v, \@p, \@way, $r + 1, $INF);
-
     my $value = 0;
     for my $j (1 .. $n) {
         my $i = $p[$j];
-        $value += $rows[ $i - 1 ][ $j - 1 ];
-        $out->[ $i - 1 ] = $j - 1 if $out;
+        $value += $rows[$i - 1][$j - 1];
+        $out->[$i - 1] = $j - 1 if $out;
     }
     return $value;
-}
-
+} ## end sub with_row
 1;
-
 __END__
 
 =head1 NAME

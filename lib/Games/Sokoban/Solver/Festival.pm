@@ -3,9 +3,9 @@ our $VERSION = '0.01';
 use v5.42;
 use warnings FATAL => 'uninitialized';
 no warnings 'recursion';
-use Carp           ();
-use Storable       ();
-use Time::HiRes    ();
+use Carp            ();
+use Storable        ();
+use Time::HiRes     ();
 use Term::ANSIColor ();
 use Compress::Zlib  ();
 use Digest::MD5     ();
@@ -74,40 +74,39 @@ use constant {
         qw(biconnect boxes_in_level boxes_on_targets connectivity dist_to_imagined dist_to_targets
             hotspots imagine out_of_plan overlap packed_boxes rooms_score value)
     ],
-    ADVISOR_KEYS                 => [qw(pack connectivity rooms hotspots opener out_of_plan explorer imagine)],
-    FEST_STAMP                   => 'fest-analysis-1',
-    ENDING                       => '%-12s %5d %3d %4d %-10s %6d %6d %12.4f %8s %8s %8s %8s %9s',
-    PROGRESS                     => '%-12s %5d ... %12d %9d %-4s %12.2f %12.0f %9d',
+    ADVISOR_KEYS => [qw(pack connectivity rooms hotspots opener out_of_plan explorer imagine)],
+    FEST_STAMP   => 'fest-analysis-1',
+    ENDING       => '%-12s %5d %3d %4d %-10s %6d %6d %12.4f %8s %8s %8s %8s %9s',
+    PROGRESS     => '%-12s %5d ... %12d %9d %-4s %12.2f %12.0f %9d',
 };
 my (
-    $Abort_reason,                 $Allocated,               $Any_core_solved,        $BOX_ONLY,
-    $Bfs_distance_from_to,         $Blocks_place,            $Blok_boxes,             $Blok_usable,
-    $CACHE_MISS,                   $Completely_blocks,       $DZ_ONLY,                $DZ_len,
-    $Dist_normalizer,              $Distance_from_to,        $Dragonfly_nodes,
-    $Dragonfly_nodes_num,          $Dragonfly_roots_num,     $Forbidden_pull_tunnel,  $Forbidden_push_tunnel,
-    $Girl_distance,                $Global_boxes_in_level,   $Global_fail_reason,     $Global_initial_sokoban_x,
-    $Global_initial_sokoban_y,     $HELPER_TEMPLATE,         $Height,                 $Helper,
-    $INNER_ONLY,                   $Index_num,               $Initial_board,          $Initial_sokoban_p,
-    $Inner,                        $Inv_epsilon,             $Inv_n_boxes,            $K_dist_hash_num,
-    $Log_deadlock_cache,           $Log_perimeter_size,      $Max_push_dist,          $Mpdb_board,
-    $NOT_BASE,                     $NOT_BOX,                 $NOT_DZ,                 $NOT_SOKOBAN,
-    $Ncells,                       $Netlock_grid,            $Netlock_level_detected, $Next_poll,
-    $OCC_ONLY,                     $PATTERNS,                $Pull_mpdb_board,        $Rooms_board,
-    $Rooms_num,                    $SOK_ONLY,                $Semi_holes,             $Snail_chain,
-    $Snail_chain_len,              $Snail_dist,              $Snail_level_detected,   $Snail_target_x,
-    $Snail_target_y,               $Solve_nseen,             $Target_holes,           $Tick,
-    $Time_limit,                   $Total_deadlock_cache_entries,
-    $Total_perimeter_entries,      $Tree,                    $Width,
-    $ZERO_BOARD,                   %Blok_sets,               %Cache,                  %Dragonfly_q,
-    %FF_MODE,                      %Perimeter,               %Progress,               @ANALYSIS_STATE,
-    @Base_graph,                   @Base_indices,            @Delta_p,                @Delta_p_8,
-    @Delta_x,                      @Delta_x_8,               @Delta_y,                @Delta_y_8,
-    @Dragonfly_roots,              @FF_NAME,                 @Gamma_table,            @Impossible_place,
-    @Index_to_p,                   @Index_to_x,              @Index_to_y,             @K_dist_hash,
-    @Mpdb_list,                    @New_envelope_patterns,   @Patterns,               @Pull_mpdb_list,
-    @Pull_patterns,                @Pull_weights,            @Push_weights,           @Room_size,
-    @Room_with_corridors,          @Square_place_p,          @Square_place_x,         @Square_place_y,
-    @Stuck_patterns,               @Target_indices,          @Targets_reachable_from, @Y_x_to_index_table,
+    $Abort_reason,                 $Allocated,               $Any_core_solved,          $BOX_ONLY,
+    $Bfs_distance_from_to,         $Blocks_place,            $Blok_boxes,               $Blok_usable,
+    $CACHE_MISS,                   $Completely_blocks,       $DZ_ONLY,                  $DZ_len,
+    $Dist_normalizer,              $Distance_from_to,        $Dragonfly_nodes,          $Dragonfly_nodes_num,
+    $Dragonfly_roots_num,          $Forbidden_pull_tunnel,   $Forbidden_push_tunnel,    $Girl_distance,
+    $Global_boxes_in_level,        $Global_fail_reason,      $Global_initial_sokoban_x, $Global_initial_sokoban_y,
+    $HELPER_TEMPLATE,              $Height,                  $Helper,                   $INNER_ONLY,
+    $Index_num,                    $Initial_board,           $Initial_sokoban_p,        $Inner,
+    $Inv_epsilon,                  $Inv_n_boxes,             $K_dist_hash_num,          $Log_deadlock_cache,
+    $Log_perimeter_size,           $Max_push_dist,           $Mpdb_board,               $NOT_BASE,
+    $NOT_BOX,                      $NOT_DZ,                  $NOT_SOKOBAN,              $Ncells,
+    $Netlock_grid,                 $Netlock_level_detected,  $Next_poll,                $OCC_ONLY,
+    $PATTERNS,                     $Pull_mpdb_board,         $Rooms_board,              $Rooms_num,
+    $SOK_ONLY,                     $Semi_holes,              $Snail_chain,              $Snail_chain_len,
+    $Snail_dist,                   $Snail_level_detected,    $Snail_target_x,           $Snail_target_y,
+    $Solve_nseen,                  $Target_holes,            $Tick,                     $Time_limit,
+    $Total_deadlock_cache_entries, $Total_perimeter_entries, $Tree,                     $Width,
+    $ZERO_BOARD,                   %Blok_sets,               %Cache,                    %Dragonfly_q,
+    %FF_MODE,                      %Perimeter,               %Progress,                 @ANALYSIS_STATE,
+    @Base_graph,                   @Base_indices,            @Delta_p,                  @Delta_p_8,
+    @Delta_x,                      @Delta_x_8,               @Delta_y,                  @Delta_y_8,
+    @Dragonfly_roots,              @FF_NAME,                 @Gamma_table,              @Impossible_place,
+    @Index_to_p,                   @Index_to_x,              @Index_to_y,               @K_dist_hash,
+    @Mpdb_list,                    @New_envelope_patterns,   @Patterns,                 @Pull_mpdb_list,
+    @Pull_patterns,                @Pull_weights,            @Push_weights,             @Room_size,
+    @Room_with_corridors,          @Square_place_p,          @Square_place_x,           @Square_place_y,
+    @Stuck_patterns,               @Target_indices,          @Targets_reachable_from,   @Y_x_to_index_table,
    );
 our ($BLOK_REPLACES, $LastFail, $MAX_GB, $QUIET, $RACE_FLAG, $RACE_GID);
 $Time_limit                   = 600;
@@ -271,9 +270,11 @@ $HELPER_TEMPLATE = {
 sub progress () {
     my $doba = Time::HiRes::time() - $Progress{'t0'};
     $doba = 0.000001 if $doba < 0.000001;
-    backline(sprintf PROGRESS,
-        $Progress{'label'}, $Progress{'gameid'}, $Solve_nseen, $Tree->{'expansions_num'} // 0,
-        $Progress{'phase'}, $doba, $Solve_nseen / $doba, $Total_perimeter_entries);
+    backline(
+        sprintf PROGRESS,               $Progress{'label'}, $Progress{'gameid'}, $Solve_nseen,
+        $Tree->{'expansions_num'} // 0, $Progress{'phase'}, $doba,               $Solve_nseen / $doba,
+        $Total_perimeter_entries
+    );
     return;
 }
 
@@ -292,12 +293,13 @@ sub run_aborted () {
     progress() unless $QUIET;
     $Abort_reason = 'MEMCAP' if $MAX_GB && Games::Sokoban::Solver::Memory::used_gb() > $MAX_GB;
     return $Abort_reason ? 1 : 0;
-}
-sub barva($reason,$ending) {
-   return if $QUIET > 1;
-   state $colour = {'SOLVED', 'bright_green', 'TIMEOUT', 'bright_yellow', 'IGNORE', 'white' };
-   my $color = $colour->{$reason} // 'bright_red';
-   backlinen(Term::ANSIColor::colored($ending,$color));
+} ## end sub run_aborted
+
+sub barva($reason, $ending) {
+    return if $QUIET > 1;
+    state $colour = { 'SOLVED', 'bright_green', 'TIMEOUT', 'bright_yellow', 'IGNORE', 'white' };
+    my $color = $colour->{$reason} // 'bright_red';
+    backlinen(Term::ANSIColor::colored($ending, $color));
 }
 
 sub in_group ($val, $group) {
@@ -335,7 +337,7 @@ sub init_board_geometry () {
 } ## end sub init_board_geometry
 
 sub get_sokoban_position ($brd) {
-    my $t = $brd&.$SOK_ONLY;
+    my $t = $brd &. $SOK_ONLY;
     return $-[0] if $t =~ /[^\0]/;
     Carp::confess("sokoban not found\n");
 }
@@ -352,11 +354,11 @@ sub flood_mask ($free, $cloud) {
     my $padw = "\0" x $Width;
     while (1) {
         my $grown = $pad1 . substr($cloud, 0, -1);
-        $grown|.= substr($cloud, 1) . $pad1;
-        $grown|.=$padw . substr($cloud, 0, -$Width);
-        $grown|.= substr($cloud, $Width) . $padw;
-        $grown&.=$free;
-        $grown|.=$cloud;
+        $grown |.= substr($cloud, 1) . $pad1;
+        $grown |.= $padw . substr($cloud, 0, -$Width);
+        $grown |.= substr($cloud, $Width) . $padw;
+        $grown &.= $free;
+        $grown |.= $cloud;
         last if $grown eq $cloud;
         $cloud = $grown;
     }
@@ -364,28 +366,28 @@ sub flood_mask ($free, $cloud) {
 } ## end sub flood_mask
 
 sub expand_sokoban_cloud ($brd, $seed = undef) {
-    my $free = ($brd&.$OCC_ONLY) =~ tr/\x00\x01\x02\x03/\xFF\x00\x00\x00/r;
+    my $free = ($brd &. $OCC_ONLY) =~ tr/\x00\x01\x02\x03/\xFF\x00\x00\x00/r;
     my $cloud;
     if (defined $seed) {
         $cloud = $ZERO_BOARD;
         vec($cloud, $seed, 8) = 0xFF;
     }
     else {
-        $cloud = ($brd&.$SOK_ONLY) =~ tr/\x08/\xFF/r;
+        $cloud = ($brd &. $SOK_ONLY) =~ tr/\x08/\xFF/r;
     }
     my $pad1 = "\0";
     my $padw = "\0" x $Width;
     while (1) {
         my $grown = $pad1 . substr($cloud, 0, -1);
-        $grown|.= substr($cloud, 1) . $pad1;
-        $grown|.=$padw . substr($cloud, 0, -$Width);
-        $grown|.= substr($cloud, $Width) . $padw;
-        $grown&.=$free;
-        $grown|.=$cloud;
+        $grown |.= substr($cloud, 1) . $pad1;
+        $grown |.= $padw . substr($cloud, 0, -$Width);
+        $grown |.= substr($cloud, $Width) . $padw;
+        $grown &.= $free;
+        $grown |.= $cloud;
         last if $grown eq $cloud;
         $cloud = $grown;
     }
-    return $brd|. ($cloud&.$SOK_ONLY);
+    return $brd |. ($cloud &. $SOK_ONLY);
 } ## end sub expand_sokoban_cloud
 
 sub get_board_hash ($brd) {
@@ -413,7 +415,7 @@ sub board_is_solved ($brd, $pull_mode) {
 }
 
 sub enter_reverse_mode ($brd, $mark_bases) {
-    $brd&.=$NOT_SOKOBAN;
+    $brd &.= $NOT_SOKOBAN;
     for my $p (0 .. $Ncells - 1) {
         my $c = vec($brd, $p, 8);
         vec($brd, $p, 8) = 0            if $c == BOX;
@@ -458,7 +460,7 @@ sub go_to_final_position_with_given_walls ($brd) {
 }
 
 sub put_sokoban_in_zone ($brd, $zones, $z) {
-    $brd&.=$NOT_SOKOBAN;
+    $brd &.= $NOT_SOKOBAN;
     for my $p (0 .. $Ncells - 1) {
         next unless $zones->[$p] == $z;
         vec($brd, $p, 8) |= SOKOBAN if (vec($brd, $p, 8) & OCCUPIED) == 0;
@@ -744,13 +746,13 @@ sub bfs_from_place ($brd, $dist, $start_p, $ignore_boxes) {
 } ## end sub bfs_from_place
 
 sub get_connectivity ($brd) {
-    my $free = ($brd&.$OCC_ONLY) =~ tr/\x00\x01\x02\x03/\xFF\x00\x00\x00/r;
-    my $todo = $free&.$INNER_ONLY;
+    my $free = ($brd &. $OCC_ONLY) =~ tr/\x00\x01\x02\x03/\xFF\x00\x00\x00/r;
+    my $todo = $free &. $INNER_ONLY;
     my $c    = 0;
     while ($todo =~ /[^\0]/g) {
         my $cloud = $ZERO_BOARD;
         vec($cloud, $-[0], 8) = 0xFF;
-        $todo&.=~. flood_mask($free, $cloud);
+        $todo &.= ~. flood_mask($free, $cloud);
         $c++;
     }
     return $c;
@@ -782,7 +784,7 @@ sub zones_around_place ($brd, $start_p) {
         next if vec($Inner, $p, 8) == 0;
         next if $z[$c] != 1000000;
         next if vec($brd, $p, 8) & OCCUPIED;
-        $free //= ($brd&.$OCC_ONLY) =~ tr/\x00\x01\x02\x03/\xFF\x00\x00\x00/r;
+        $free //= ($brd &. $OCC_ONLY) =~ tr/\x00\x01\x02\x03/\xFF\x00\x00\x00/r;
         my $cloud = $ZERO_BOARD;
         vec($cloud, $p, 8) = 0xFF;
         $cloud = flood_mask($free, $cloud);
@@ -799,7 +801,7 @@ sub get_srcs_of_all_targets ($b_in) {
     my $queue_place = 0;
     my ($brd, $srcs);
     $srcs = $ZERO_BOARD;
-    $brd  = $b_in&.$NOT_BOX;
+    $brd  = $b_in &. $NOT_BOX;
     for my $p (0 .. $Ncells - 1) {
         next if vec($Inner, $p, 8) == 0;
         next if (vec($brd, $p, 8) & TARGET) == 0;
@@ -1115,7 +1117,7 @@ sub work_left_outside_deadlock_zone ($brd) {
 sub get_sokoban_cloud_as_group ($brd) {
     state $sok_only = '';
     $sok_only = chr(SOKOBAN) x $Ncells if length($sok_only) != $Ncells;
-    (my $g = $brd&.$sok_only) =~ tr/\x08/\x01/;
+    (my $g = $brd &. $sok_only) =~ tr/\x08/\x01/;
     return $g;
 }
 
@@ -1138,9 +1140,9 @@ sub can_be_pushed_sideways ($brd, $p, $d) {
 sub update_deadlock_zone_from_group_push_mode ($brd, $group) {
     my $prev_deadlock_zone;
     _dz_masks();
-    ($prev_deadlock_zone = $brd&.$DZ_ONLY) =~ tr/\x20/\x01/;
+    ($prev_deadlock_zone = $brd &. $DZ_ONLY) =~ tr/\x20/\x01/;
     _dz_masks();
-    $brd&.=$NOT_DZ;
+    $brd &.= $NOT_DZ;
     for my $p (0 .. $Ncells - 1) {
         next if vec($Inner, $p, 8) == 0;
         next if vec($group, $p, 8) == 0;
@@ -1167,7 +1169,7 @@ sub update_deadlock_zone_from_group_push_mode ($brd, $group) {
 sub add_islands ($brd) {
     my $dz;
     _dz_masks();
-    ($dz = $brd&.$DZ_ONLY) =~ tr/\x20/\x01/;
+    ($dz = $brd &. $DZ_ONLY) =~ tr/\x20/\x01/;
     for my $p (0 .. $Ncells - 1) {
         next if vec($Inner, $p, 8) == 0;
         next if vec($brd,   $p, 8) & OCCUPIED;
@@ -1186,7 +1188,7 @@ sub add_islands ($brd) {
 sub init_deadlock_zone_from_group ($brd, $group, $pull_mode) {
     if ($pull_mode) {
         _dz_masks();
-        $brd&.=$NOT_DZ;
+        $brd &.= $NOT_DZ;
         for my $p (0 .. $Ncells - 1) {
             next if vec($group, $p, 8) == 0;
             vec($brd, $p, 8) |= DEADLOCK_ZONE;
@@ -1273,7 +1275,7 @@ sub update_deadlock_zone ($brd, $pull_mode) {
 
 sub size_of_deadlock_zone ($brd) {
     _dz_masks();
-    my $t = $brd&.$DZ_ONLY;
+    my $t = $brd &. $DZ_ONLY;
     return $t =~ tr/\x00//c;
 }
 
@@ -1367,7 +1369,7 @@ sub fix_crystaline ($b_in) {
     my $brd;
     my $fixed_box = 0;
     $brd = $b_in;
-    $brd&.=$NOT_SOKOBAN;
+    $brd &.= $NOT_SOKOBAN;
     $brd = go_to_final_position_with_given_walls($brd);
     my $removed_box;
     do {
@@ -1572,7 +1574,7 @@ sub set_graph_weights_to_infinity ($gd) {
 }
 
 sub build_graph ($brd, $pull_mode, $gd) {
-    Carp::confess('boxes in board') if (($brd&.$BOX_ONLY) =~ tr/\x00//c);
+    Carp::confess('boxes in board') if (($brd &. $BOX_ONLY) =~ tr/\x00//c);
     init_active($brd, $gd);
     init_shift($brd, $gd);
     if ($pull_mode) {init_pull($brd, $gd);}
@@ -1820,7 +1822,7 @@ sub mark_box_moves_in_graph ($b_in, $box_index, $pull_mode, $gd) {
             $src->[$next_index]    = $index;
             push @next, $next_index;
             my $index_after_push = $next_index;
-            $brd&.=$NOT_SOKOBAN;
+            $brd &.= $NOT_SOKOBAN;
             vec($brd, $next_box_p, 8) |= BOX;
             vec($brd, $next_sok_p, 8) |= SOKOBAN;
             $brd = expand_sokoban_cloud($brd, $next_sok_p);
@@ -2056,7 +2058,7 @@ sub compute_pull_order ($b_in, $order) {
         }
         $current_num = $next_num;
     } ## end while ($current_num)
-    if ((($brd&.$BOX_ONLY) =~ tr/\x00//c) > 0) {
+    if ((($brd &. $BOX_ONLY) =~ tr/\x00//c) > 0) {
         return;
     }
     return;
@@ -2274,7 +2276,7 @@ sub is_2x2_deadlock_at_place ($brd, $p) {
 }
 
 sub mark_deadlock_2x2 ($c) {
-    $c&.=$NOT_SOKOBAN;
+    $c &.= $NOT_SOKOBAN;
     my $d;
     $d = $ZERO_BOARD;
     for my $i (0 .. $Height - 2) {
@@ -2538,10 +2540,10 @@ sub check_all_patterns ($b_in, $box_p, $pull_mode) {
     return -1 if box_touches_unreachable_square($b_in, $box_p) == 0;
     my $box_y = int($box_p / $Width);
     my $box_x = $box_p % $Width;
-    return -1 if $pull_mode and (($b_in&.$SOK_ONLY) =~ tr/\x00//c) > 4;
+    return -1 if $pull_mode and (($b_in &. $SOK_ONLY) =~ tr/\x00//c) > 4;
     my $brd;
     _dz_masks();
-    $brd = $b_in&.$NOT_DZ;
+    $brd = $b_in &. $NOT_DZ;
     if ($pull_mode == 0) {
         for my $i (0 .. $#Patterns) {
             return $i if check_deadlock_pattern($Patterns[$i], $brd, $box_y, $box_x);
@@ -2664,7 +2666,7 @@ sub set_blok ($src) {
         }
     }
     return scalar keys %Blok_sets;
-}
+} ## end sub set_blok
 
 sub _blok_boxvec ($brd) {
     my $vb = '';
@@ -2682,7 +2684,7 @@ sub blok_forbids ($m) {
     vec($vb, $Index_to_p[$m->{'from'}], 1) = 0;
     vec($vb, $t, 1) = 1;
     for my $pv (@$sets) {
-        return 1 if ($vb&.$pv) eq $pv;
+        return 1 if ($vb &. $pv) eq $pv;
     }
     return 0;
 }
@@ -2690,7 +2692,7 @@ sub blok_forbids ($m) {
 sub get_distance_from_targets ($brd, $dist) {
     my ($target_area, $board_without_boxes);
     $target_area         = $ZERO_BOARD;
-    $board_without_boxes = $brd&.$NOT_BOX;
+    $board_without_boxes = $brd &. $NOT_BOX;
     for my $p (0 .. $Ncells - 1) {
         vec($target_area, $p, 8) = 1 if vec($brd, $p, 8) & TARGET;
     }
@@ -2708,8 +2710,8 @@ sub get_direction_from_pusher_dest ($pusher_p, $dest_p) {
 
 sub get_corral_boxes ($orig_b, $cd) {
     my $corral_boxes;
-    $corral_boxes = $orig_b&.$NOT_BOX;
-    $corral_boxes&.=$NOT_SOKOBAN;
+    $corral_boxes = $orig_b &. $NOT_BOX;
+    $corral_boxes &.= $NOT_SOKOBAN;
     for my $p (0 .. $Ncells - 1) {
         next if vec($cd->{'corral'}, $p, 8) == 0;
         vec($corral_boxes, $p, 8) |= SOKOBAN;
@@ -2759,7 +2761,7 @@ sub set_corral_options ($b_in, $cd) {
     my $corral_boxes;
     $corral_boxes = get_corral_boxes($b_in, $cd);
     my $corral_options;
-    $corral_options = $b_in&.$NOT_BOX;
+    $corral_options = $b_in &. $NOT_BOX;
     for my $p (0 .. $Ncells - 1) {
         next if (vec($corral_boxes, $p, 8) & BOX) == 0;
         for my $k (0 .. 3) {
@@ -3133,7 +3135,7 @@ sub get_oop_zone_for_step ($step, $h) {
     for my $i ($step + 1 .. $h->{'parking_order_num'} - 1) {
         vec($next_targets, $Index_to_p[$parking_order->[$i]{'to'}], 8) = 1;
     }
-    $brd = $Initial_board&.$NOT_BOX;
+    $brd = $Initial_board &. $NOT_BOX;
     for my $p (0 .. $Ncells - 1) {
         vec($brd, $p, 8) = WALL if vec($parked_boxes, $p, 8);
     }
@@ -3163,7 +3165,7 @@ sub get_oop_distance_for_step ($step, $h) {
     Carp::confess('missing oop1') unless defined $h->{'oop'};
     my $oop_zone_for_step = $h->{'oop'}{'oop_zone_for_step'};
     $parked      = get_parked_boxes($step, $h);
-    $empty_board = $Initial_board&.$NOT_BOX;
+    $empty_board = $Initial_board &. $NOT_BOX;
     for my $p (0 .. $Ncells - 1) {
         vec($empty_board, $p, 8) = WALL if vec($parked, $p, 8);
     }
@@ -3284,9 +3286,9 @@ sub find_box_moves ($brd, $index, $pull_mode, $search_mode, $possible_board, $gd
 }
 
 sub move_pack ($m) {
-    return $m->{'from'} | $m->{'to'} << 12 | $m->{'sokoban_position'} << 24
-        | ($m->{'kill'} ? 1 << 26 : 0) | ($m->{'base'} ? 1 << 27 : 0) | ($m->{'pull'} ? 1 << 28 : 0)
-        | ($m->{'attr'}{'reversible'} ? 1 << 29 : 0) | ($m->{'attr'}{'weight'} + 1) << 30;
+    return $m->{'from'} | $m->{'to'} << 12 | $m->{'sokoban_position'} << 24 | ($m->{'kill'} ? 1 << 26 : 0) |
+        ($m->{'base'} ? 1 << 27 : 0) | ($m->{'pull'} ? 1 << 28 : 0) | ($m->{'attr'}{'reversible'} ? 1 << 29 : 0) |
+        ($m->{'attr'}{'weight'} + 1) << 30;
 }
 
 sub move_unpack ($v) {
@@ -3297,7 +3299,7 @@ sub move_unpack ($v) {
         'kill'             => $v >> 26 & 1,
         'base'             => $v >> 27 & 1,
         'pull'             => $v >> 28 & 1,
-        'attr'             => {'weight' => ($v >> 30 & 3) - 1, 'advisor' => 0, 'reversible' => $v >> 29 & 1},
+        'attr'             => { 'weight' => ($v >> 30 & 3) - 1, 'advisor' => 0, 'reversible' => $v >> 29 & 1 },
     };
 }
 
@@ -3311,7 +3313,7 @@ sub apply_move ($brd, $m, $search_type) {
             if $search_type == DEADLOCK_SEARCH;
         return $brd;
     }
-    $brd&.=$NOT_SOKOBAN;
+    $brd &.= $NOT_SOKOBAN;
     my $p = $Index_to_p[$m->{'from'}];
     Carp::confess('missing box2') if (vec($brd, $p, 8) & BOX) == 0;
     vec($brd, $p, 8) &= 0xFF ^ BOX;
@@ -3422,7 +3424,7 @@ sub try_pulling_all_zones ($b_in) {
     my ($brd, $final);
     my @zones;
     $brd   = turn_fixed_boxes_into_walls($b_in);
-    $final = $brd&.$NOT_BOX;
+    $final = $brd &. $NOT_BOX;
     $final = turn_targets_into_packed($final);
     my $zones_num = mark_connectivities($final, \@zones);
     for my $i (0 .. $zones_num - 1) {
@@ -3451,7 +3453,7 @@ sub can_played_reversed ($brd, $m, $pull_mode, $search_mode) {
     my $p = $Index_to_p[$m->{'to'}];
     if (get_connectivity($c) > 1) {
         my ($w, $corral_options);
-        $c&.=$NOT_BASE;
+        $c &.= $NOT_BASE;
         $w = turn_fixed_boxes_into_walls($c);
         (my $has_c, $corral_options) = detect_corral($w);
         if ($has_c) {
@@ -3506,7 +3508,7 @@ sub check_matching_deadlock ($b_in, $pull_mode, $search_mode) {
     if ($pull_mode == 0) {
         my $gd = allocate_graph();
         my $empty;
-        $empty = $brd&.$NOT_BOX;
+        $empty = $brd &. $NOT_BOX;
         build_graph($empty, 0, $gd);
         make_holes_inactive($brd, $gd);
         for my $i (0 .. $box_num - 1) {
@@ -3605,7 +3607,7 @@ sub get_hash_without_bases ($t, $e, $son) {
         if score_field($t, $e->{'node'}, SC_BOXES_IN_LEVEL) != $Global_boxes_in_level;
     if ($son == -1) {
         $brd = $e->{'b'};
-        $brd&.=$NOT_BASE;
+        $brd &.= $NOT_BASE;
         return get_board_hash($brd);
     }
     my $mhi   = $e->{'move_hash_place'} + $son;
@@ -3614,7 +3616,7 @@ sub get_hash_without_bases ($t, $e, $son) {
         if score_field($t, $place, SC_BOXES_IN_LEVEL) != $Global_boxes_in_level;
     $brd = $e->{'b'};
     $brd = apply_move($brd, move_unpack($t->{'mh_move'}[$mhi]), NORMAL);
-    $brd&.=$NOT_BASE;
+    $brd &.= $NOT_BASE;
     return get_board_hash($brd);
 } ## end sub get_hash_without_bases
 
@@ -3631,7 +3633,7 @@ sub update_perimeter ($hash, $depth, $pull_mode, $alg) {
     return if (($v >> 8) & 255) == 1;
     $Perimeter{$hash} = $depth << 16 | $pull_mode << 8 | ($alg & 255);
     return;
-} ## end sub update_perimeter
+}
 
 sub perimeter_is_full () {
     my $limit = 1 << ($Log_perimeter_size - 1);
@@ -3663,7 +3665,7 @@ sub insert_node_into_perimeter ($t, $e, $with_sons) {
         $hash =
             $t->{'search_mode'} == BASE_SEARCH
             ? get_hash_without_bases($t, $e, $j)
-            : $t->{'node_hash'}[ $mh_node->[$mp + $j] ];
+            : $t->{'node_hash'}[$mh_node->[$mp + $j]];
         if (not exists $Perimeter{$hash}) {
             $Perimeter{$hash} = ($e->{'depth'} + 1) << 16 | $tag;
             $perimeter_entries++;
@@ -3981,7 +3983,7 @@ sub has_pull_continuation ($brd, $search_mode) {
         return 1 if $all_boxes_solved;
     }
     if ($search_mode == K_DIST_SEARCH) {
-        return 1 if (($brd&.$SOK_ONLY) =~ tr/\x00//c) > 1;
+        return 1 if (($brd &. $SOK_ONLY) =~ tr/\x00//c) > 1;
         return 1
             if sokoban_touches_a_filled_hole($brd);
         return 0;
@@ -4001,7 +4003,7 @@ sub check_deadlock_in_moves ($b_in, $moves, $pull_mode, $search_mode, $h) {
     my @valid;
     my $brd = $b_in;
     $search_mode = NORMAL if $search_mode == DEADLOCK_SEARCH;
-    $brd&.=$NOT_BASE if $pull_mode;
+    $brd &.= $NOT_BASE if $pull_mode;
     my @elim = (0) x $Index_num;
     if ($pull_mode and $search_mode == BASE_SEARCH) {
         for my $p (0 .. $Ncells - 1) {
@@ -4150,7 +4152,7 @@ sub get_move_with_most_packing ($positions, $pos_num, $son_ref) {
 
 sub has_a_move_with_all_boxes_packed ($p) {
     my $brd             = $p->{'board'};
-    my $boxes_in_search = (($brd&.$BOX_ONLY) =~ tr/\x00//c);
+    my $boxes_in_search = (($brd &. $BOX_ONLY) =~ tr/\x00//c);
     for my $i (0 .. $p->{'moves_num'} - 1) {
         return 1 if $p->{'scores'}[$i]{'boxes_on_targets'} == $boxes_in_search;
     }
@@ -4302,7 +4304,7 @@ sub set_deadlock_status ($t, $e) {
     for my $i (0 .. $e->{'moves_num'} - 1) {
         next if $mh_dead->[$mp + $i];
         my $place = $mh_node->[$mp + $i];
-        $mh_dead->[$mp + $i] = 1      if $node_dead->[$place];
+        $mh_dead->[$mp + $i] = 1 if $node_dead->[$place];
     }
     for my $i (0 .. $e->{'moves_num'} - 1) {
         return if $mh_dead->[$mp + $i] == 0;
@@ -4319,13 +4321,13 @@ sub set_leaf_direction ($t, $e) {
     return if $t->{'node_deadlocked'}[$e->{'node'}];
     for my $i (0 .. $e->{'moves_num'} - 1) {
         my $place = $mh_node->[$mp + $i];
-        next                          if $t->{'node_deadlocked'}[$place];
+        next if $t->{'node_deadlocked'}[$place];
         next unless ($t->{'node_expansion'}[$place] == -1);
         $e->{'leaf_direction'} = $i;
         return;
     }
     return;
-} ## end sub set_leaf_direction
+}
 
 sub block_existing_sons_tree ($t, $e, $nodes_before_expansion) {
     my $mh_node = $t->{'mh_node'};
@@ -4333,7 +4335,7 @@ sub block_existing_sons_tree ($t, $e, $nodes_before_expansion) {
     my $mp      = $e->{'move_hash_place'};
     for my $i (0 .. $e->{'moves_num'} - 1) {
         my $place = $mh_node->[$mp + $i];
-        $mh_dead->[$mp + $i] = 1      if $place < $nodes_before_expansion;
+        $mh_dead->[$mp + $i] = 1 if $place < $nodes_before_expansion;
     }
     set_deadlock_status($t, $e);
     return;
@@ -4373,7 +4375,7 @@ sub best_move_is_available ($t, $e) {
     }
     return 0 if $t->{'node_expansion'}[$place] != -1;
     return 1;
-} ## end sub best_move_is_available
+}
 
 sub set_node_as_deadlocked ($t, $pos, $son) {
     my $e     = $t->{'expansions'}[$pos];
@@ -4495,7 +4497,7 @@ sub push_is_reversible ($b_in, $p, $d) {
     my $brd = $b_in;
     vec($brd, $p, 8) &= 0xFF ^ BOX;
     vec($brd, $p + $Delta_p[$d], 8) |= BOX;
-    $brd&.=$NOT_SOKOBAN;
+    $brd &.= $NOT_SOKOBAN;
     vec($brd, $p, 8) |= SOKOBAN;
     $brd = expand_sokoban_cloud($brd, $p);
     return 1 if vec($brd, $p + 2 * $Delta_p[$d], 8) & SOKOBAN;
@@ -4509,7 +4511,7 @@ sub pull_is_reversible ($b_in, $p, $d) {
     my $brd = $b_in;
     vec($brd, $p, 8) &= 0xFF ^ BOX;
     vec($brd, $p + $Delta_p[$d], 8) |= BOX;
-    $brd&.=$NOT_SOKOBAN;
+    $brd &.= $NOT_SOKOBAN;
     my $sok_p = $p + 2 * $Delta_p[$d];
     vec($brd, $sok_p, 8) |= SOKOBAN;
     $brd = expand_sokoban_cloud($brd, $sok_p);
@@ -4817,7 +4819,7 @@ sub back_propagate_values_tree ($t, $e) {
     for my $i (0 .. $e->{'moves_num'} - 1) {
         next if $mh_dead->[$mp + $i];
         my $node_place = $mh_node->[$mp + $i];
-        my $value = score_field($t, $node_place, SC_VALUE);
+        my $value      = score_field($t, $node_place, SC_VALUE);
         $max_value = $value if $value > $max_value;
         $has_son   = 1;
     }
@@ -4885,7 +4887,7 @@ sub get_bases_as_board ($brd) {
 
 sub compute_possible_from_bases ($brd) {
     my ($bases, $board_without_boxes);
-    $board_without_boxes = $Initial_board&.$NOT_BOX;
+    $board_without_boxes = $Initial_board &. $NOT_BOX;
     $bases               = get_bases_as_board($brd);
     return find_targets_of_a_board_input($board_without_boxes, $bases);
 }
@@ -5064,7 +5066,7 @@ sub pick_pull_advisor_normal ($b_in, $base_score, $moves_num, $moves, $scores, $
         $w         = $brd;
         $w         = turn_boxes_into_walls($w);
         $targets   = find_targets_of_a_board_input($w, $scc);
-        $kill_zone&.=$targets;
+        $kill_zone &.= $targets;
     }
     else {
         $kill_zone = $ZERO_BOARD;
@@ -5287,7 +5289,7 @@ sub set_rev_distance ($t, $e, $h, $moves, $scores) {
         $scores->[$i] = {};
         get_score_of_node($t, $mh_node->[$mp + $i], $scores->[$i]);
     }
-    my $brd = $e->{'b'};
+    my $brd  = $e->{'b'};
     my $base = score_hash($t, $e->{'node'});
     compute_rev_distance($brd, $base, $moves, $scores, $h->{'imagined_hf_board'}, $Distance_from_to);
     $t->{'node_score'}[$e->{'node'}] = score_pack($base);
@@ -5327,7 +5329,7 @@ sub rev_hotspots_distance ($brd, $h) {
     if (unpack('%32C*', $hs) == 0) {
         return get_scored_distance($brd, $h);
     }
-    $b2 = $Initial_board&.$NOT_BOX;
+    $b2 = $Initial_board &. $NOT_BOX;
     $hs = expand_group($b2, $hs, $dist);
     for my $p (0 .. $Ncells - 1) {
         $sum += $dist->[$p]
@@ -5370,7 +5372,7 @@ sub get_distance_in_hf_search ($brd, $s, $h) {
     my $sum  = 0;
     return get_scored_distance($brd, $h);
     $untouched = get_untouched_areas($brd);
-    $tmp       = $Initial_board&.$NOT_BOX;
+    $tmp       = $Initial_board &. $NOT_BOX;
     $untouched = expand_group($tmp, $untouched, $dist);
     for my $p (0 .. $Ncells - 1) {
         $sum += $dist->[$p]
@@ -5426,7 +5428,7 @@ sub set_naive_data_in_node ($t, $e, $h) {
         $scores[$i] = {};
         get_score_of_node($t, $mh_node->[$mp + $i], $scores[$i]);
     }
-    my $brd = $e->{'b'};
+    my $brd  = $e->{'b'};
     my $base = score_hash($t, $e->{'node'});
     if ($t->{'pull_mode'}) {
         compute_base_distance($brd, $base, \@moves, \@scores);
@@ -5695,7 +5697,7 @@ sub is_in_stuck_patterns ($brd, $pull_mode) {
 
 sub add_stuck_pattern ($brd, $pull_mode) {
     if (is_in_stuck_patterns($brd, $pull_mode) == 0) {
-        my $n = (($brd&.$BOX_ONLY) =~ tr/\x00//c);
+        my $n = (($brd &. $BOX_ONLY) =~ tr/\x00//c);
         Carp::confess('pattern too big') if $n > MAX_STUCK_PATTERN_SIZE;
         Carp::confess('empty pattern')   if $n == 0;
         push @Stuck_patterns,
@@ -5754,13 +5756,13 @@ sub find_possible_moves ($b_input, $pull_mode, $has_corral_ref, $search_mode, $h
     $$has_corral_ref = 0;
     if ($pull_mode == 0) {
         _dz_masks();
-        $c          = $b_input&.$NOT_DZ;
+        $c          = $b_input &. $NOT_DZ;
         $brd        = turn_fixed_boxes_into_walls($c);
         $Blok_boxes = _blok_boxvec($c) if $BLOK_REPLACES and $Blok_usable;
     }
     else {
         _dz_masks();
-        $brd = $b_input&.$NOT_DZ;
+        $brd = $b_input &. $NOT_DZ;
     }
     $possible_board = get_possible_places($brd, $pull_mode, $search_mode);
     $use_corral     = 0 if $search_mode == DEADLOCK_SEARCH;
@@ -6134,7 +6136,7 @@ sub is_better_element ($q, $first, $second) {
         if is_better_score(\%s2, \%s1, $pull_mode, $search_mode);
     return 1 if $first < $second;
     return 0;
-}
+} ## end sub is_better_element
 
 sub heapify ($q, $i) {
     return if $q->{'heap_size'} == 0;
@@ -6216,8 +6218,8 @@ sub set_best_move ($t, $e) {
     my ($best_score, $best_place);
     $e->{'best_move'}   = -1;
     $e->{'best_weight'} = 1000000;
-    my $node_exp   = $t->{'node_expansion'};
-    my $node_dead  = $t->{'node_deadlocked'};
+    my $node_exp  = $t->{'node_expansion'};
+    my $node_dead = $t->{'node_deadlocked'};
     return if $node_dead->[$e->{'node'}];
     my $mh_move = $t->{'mh_move'};
     my $mh_node = $t->{'mh_node'};
@@ -6227,7 +6229,7 @@ sub set_best_move ($t, $e) {
     for my $i (0 .. $e->{'moves_num'} - 1) {
         next if $mh_dead->[$mp + $i];
         my $node_place = $mh_node->[$mp + $i];
-        next                             if $node_exp->[$node_place] != -1;
+        next if $node_exp->[$node_place] != -1;
         if ($node_dead->[$node_place]) {
             $mh_dead->[$mp + $i] = 1;
             next;
@@ -6382,7 +6384,14 @@ sub update_best_so_far ($t, $best_so_far_ref, $new_node, $pull_mode, $search_mod
         }
         return 0;
     }
-    if (is_better_score(score_hash($t, $new_node->{'best_past'}), score_hash($t, $bsf->{'best_past'}), $pull_mode, $search_mode)) {
+    if (
+        is_better_score(
+            score_hash($t, $new_node->{'best_past'}),
+            score_hash($t, $bsf->{'best_past'}),
+            $pull_mode, $search_mode
+        )
+       )
+    {
         $$best_so_far_ref = $new_node;
         return 1;
     }
@@ -6390,8 +6399,8 @@ sub update_best_so_far ($t, $best_so_far_ref, $new_node, $pull_mode, $search_mod
 } ## end sub update_best_so_far
 
 sub best_node_in_tree ($t) {
-    my $e          = $t->{'expansions'};
-    my $node_dead  = $t->{'node_deadlocked'};
+    my $e         = $t->{'expansions'};
+    my $node_dead = $t->{'node_deadlocked'};
     my $res;
     for my $i (0 .. $t->{'expansions_num'} - 1) {
         next if $node_dead->[$e->[$i]{'node'}];
@@ -6449,7 +6458,7 @@ sub set_values_to_moves_tree ($t, $e) {
             unpack('f', pack('f', score_to_value(score_hash($t, $node_place), $t->{'pull_mode'}))));
     }
     return;
-} ## end sub set_values_to_moves_tree
+}
 
 sub find_best_RL_parking_node ($t) {
     my $max_value = -1000000;
@@ -6518,8 +6527,8 @@ sub init_imagine ($full, $n, $h) {
         Carp::confess('shifting a box in place');
     }
     $brd = $Initial_board;
-    $brd&.=$NOT_BOX;
-    $brd&.=$NOT_SOKOBAN;
+    $brd &.= $NOT_BOX;
+    $brd &.= $NOT_SOKOBAN;
     $fixed = $ZERO_BOARD;
     for my $i (0 .. $n - 1) {
         my $to_p = $Index_to_p[$full->[$i]{'to'}];
@@ -6666,7 +6675,7 @@ sub set_imagine_data_in_node ($t, $e, $h) {
         $scores[$i] = {};
         get_score_of_node($t, $mh_node->[$mp + $i], $scores[$i]);
     }
-    my $brd = $e->{'b'};
+    my $brd  = $e->{'b'};
     my $base = score_hash($t, $e->{'node'});
     compute_imagine_distance($brd, $base, \@moves, \@scores, $t->{'search_mode'}, $h);
     $t->{'node_score'}[$e->{'node'}] = score_pack($base);
@@ -6733,7 +6742,7 @@ sub score_board ($brd, $s, $pull_mode, $search_mode, $h) {
     }
     $s->{'boxes_on_targets'} = ($brd =~ tr/\x06\x16//);
     $s->{'connectivity'}     = get_connectivity($brd);
-    $s->{'boxes_in_level'}   = (($brd&.$BOX_ONLY) =~ tr/\x00//c);
+    $s->{'boxes_in_level'}   = (($brd &. $BOX_ONLY) =~ tr/\x00//c);
     return if $search_mode == K_DIST_SEARCH;
     if ($search_mode == REV_SEARCH) {
         set_score_in_rev_mode($brd, $s, $pull_mode, $h);
@@ -6945,8 +6954,8 @@ sub check_deadlock_using_k_dist_cache ($brd) {
     my ($forced, $adj_4, $adj_9, $b_wallified, $w);
     $b_wallified = turn_fixed_boxes_into_walls($brd);
     $b_wallified = turn_target_holes_into_walls($b_wallified);
-    $w           = $b_wallified&.$NOT_BOX;
-    $w&.=$NOT_SOKOBAN;
+    $w           = $b_wallified &. $NOT_BOX;
+    $w &.= $NOT_SOKOBAN;
     my $hash = get_board_hash($w);
     my $n    = find_in_k_dist_hash($hash);
     if ($n == -1) {
@@ -7070,7 +7079,7 @@ sub is_rooms_deadlock ($b_in, $pull_mode, $last_move) {
     my $p = $Index_to_p[$last_move->{'to'}];
     my $brd;
     $brd = $b_in;
-    $brd&.=$NOT_BASE if $pull_mode;
+    $brd &.= $NOT_BASE if $pull_mode;
     for my $t (0 .. $Rooms_num - 1) {
         next if vec($Room_with_corridors[$t], $p, 8) == 0;
         next if $Room_size[$t] >= 25;
@@ -7113,7 +7122,7 @@ sub fill_expansion_structures ($t, $e, $h) {
             $place = $t->{'nodes_num'} - 1;
         }
         $mh_node->[$mp + $i] = $place;
-    }
+    } ## end for my $i (0 .. $moves_num...)
     $t->{'move_hashes_num'} += $moves_num;
     set_leaf_direction($t, $e);
     return;
@@ -7171,7 +7180,7 @@ sub expand_node ($t, $e, $son, $h) {
     my $mp                     = $e->{'move_hash_place'};
     my $node_place             = $t->{'mh_node'}[$mp + $son];
     my $hash                   = $t->{'node_hash'}[$node_place];
-    my $n_score = score_hash($t, $node_place);
+    my $n_score                = score_hash($t, $node_place);
     Carp::confess('already expanded')
         if $t->{'node_expansion'}[$node_place] != -1;
     Carp::confess('expanding a leaf which is known to be deadlocked')
@@ -7262,11 +7271,11 @@ sub is_wobblers_deadlock ($b_in, $pull_mode) {
     }
     else {
         $brd = $b_in;
-        $brd&.=$NOT_BASE;
+        $brd &.= $NOT_BASE;
     }
     $brd = remove_boxes_with_no_player_access($brd, $pull_mode, 0);
     $brd = remove_wobblers($brd, $pull_mode);
-    my $n = (($brd&.$BOX_ONLY) =~ tr/\x00//c);
+    my $n = (($brd &. $BOX_ONLY) =~ tr/\x00//c);
     return 0 if $n == 0;
     return 0 if $n == $Global_boxes_in_level;
     my $res = wobbler_deadlock_search($brd, $pull_mode);
@@ -7362,7 +7371,7 @@ sub slow_xy_deadlock ($b_in, $pull_mode) {
     $brd = remove_wobblers($brd, $pull_mode)
         if $pull_mode == 0;
     $brd = clear_xy_boxes($brd, $pull_mode);
-    my $n = (($brd&.$BOX_ONLY) =~ tr/\x00//c);
+    my $n = (($brd &. $BOX_ONLY) =~ tr/\x00//c);
     return if $n == 0;
     return if $n > MAX_STUCK_PATTERN_SIZE;
     return if $n == $Global_boxes_in_level;
@@ -7426,7 +7435,7 @@ sub corral_deadlock_search_actual ($brd, $pull_mode, $search_size) {
 
 sub mini_corral ($brd) {
     my $c;
-    return NOT_DEADLOCK if (($brd&.$BOX_ONLY) =~ tr/\x00//c) > 5;
+    return NOT_DEADLOCK if (($brd &. $BOX_ONLY) =~ tr/\x00//c) > 5;
     my $hash = get_board_hash($brd);
     my $res  = (($Cache{ join '/', $hash, 0, MINI_CORRAL } // $CACHE_MISS)->[0]);
     return $res if $res == IS_DEADLOCK or $res == NOT_DEADLOCK;
@@ -7472,14 +7481,14 @@ sub advanced_deadlock_search ($brd, $pull_mode) {
 sub advanced_deadlock_pull_mode ($b_in, $without_wobblers) {
     my ($brd, $c);
     $brd = $b_in;
-    $brd&.=$NOT_BASE;
+    $brd &.= $NOT_BASE;
     return 0 if get_connectivity($brd) == 1;
     $brd = remove_wobblers($brd, 1) if $without_wobblers;
     $brd = set_deadlock_zone_in_pull_mode($brd);
     $c   = $brd;
     $c   = clear_boxes_out_of_deadlock_zone($c);
     return NOT_DEADLOCK
-        if (($c&.$BOX_ONLY) =~ tr/\x00//c) == $Global_boxes_in_level;
+        if (($c &. $BOX_ONLY) =~ tr/\x00//c) == $Global_boxes_in_level;
     my $res = advanced_deadlock_search($c, 1);
     return 0 if $res == NOT_DEADLOCK or $res == SEARCH_EXCEEDED;
 
@@ -7768,8 +7777,7 @@ sub set_advisors_in_node ($t, $e, $h) {
     my $brd = $e->{'b'};
     my %adv;
     set_advisors_inner($brd, score_hash($t, $e->{'node'}),
-        $e->{'moves_num'}, \@moves, \@scores, $t->{'pull_mode'}, $t->{'search_mode'}, \%adv, \@already_expanded,
-        $h);
+        $e->{'moves_num'}, \@moves, \@scores, $t->{'pull_mode'}, $t->{'search_mode'}, \%adv, \@already_expanded, $h);
     $e->{'advisors'} = pack 'l8', @adv{ @{ +ADVISOR_KEYS } };
     return;
 } ## end sub set_advisors_in_node
@@ -7814,6 +7822,7 @@ sub FESS ($brd, $time_allocation, $search_mode, $t, $h) {
     my $new_node = $t->{'expansions'}[$t->{'expansions_num'} - 1];
     set_advisors_and_weights_to_last_node($t, $h);
     $new_node->{'best_past'} = $new_node->{'node'};
+
     if ($search_mode == GIRL_SEARCH) {
         set_values_to_moves_tree($t, $new_node);
         back_propagate_values_tree($t, $new_node);
@@ -7859,7 +7868,7 @@ sub FESS ($brd, $time_allocation, $search_mode, $t, $h) {
             set_node_as_deadlocked($t, $tree_pos, $tree_son);
             if ($h->{'perimeter_found'}) {
                 my $son_depth;
-                my $hash = $t->{'node_hash'}[ $t->{'mh_node'}[$expanded_node->{'move_hash_place'} + $tree_son] ];
+                my $hash = $t->{'node_hash'}[$t->{'mh_node'}[$expanded_node->{'move_hash_place'} + $tree_son]];
                 if (is_in_perimeter($hash, \$son_depth, 1)) {
                 }
             }
@@ -7877,7 +7886,6 @@ sub FESS ($brd, $time_allocation, $search_mode, $t, $h) {
         $label = get_label_of_score(score_hash($t, $new_node->{'best_past'}), 0, $h);
         add_label_to_last_node($t, $label, $h);
         update_best_so_far($t, \$best_so_far, $new_node, 0, $search_mode);
-
         if (node_is_solved($t, $new_node)) {
             $solved = 1;
             last;
@@ -7909,7 +7917,7 @@ sub FESS ($brd, $time_allocation, $search_mode, $t, $h) {
 
 sub compute_start_zones ($start_zones) {
     my $brd;
-    $brd = $Initial_board&.$NOT_BOX;
+    $brd = $Initial_board &. $NOT_BOX;
     $brd = turn_targets_into_walls($brd);
     my $zones_num = mark_connectivities($brd, $start_zones);
     return $zones_num;
@@ -7973,6 +7981,7 @@ sub packing_search ($b_in, $time_allocation, $search_mode, $t, $h) {
         add_pack_request($s, $h);
         my $label = get_label_of_score($s, 1, $h);
         add_label_to_last_node($t, $label, $h);
+
         if ($search_mode == GIRL_SEARCH) {
             set_values_to_moves_tree($t, $t->{'expansions'}[$t->{'expansions_num'} - 1]);
             back_propagate_values_tree($t, $t->{'expansions'}[$t->{'expansions_num'} - 1]);
@@ -8019,7 +8028,7 @@ sub packing_search ($b_in, $time_allocation, $search_mode, $t, $h) {
             set_node_as_deadlocked($t, $tree_pos, $tree_son);
             if ($h->{'perimeter_found'}) {
                 my $son_depth;
-                my $hash = $t->{'node_hash'}[ $t->{'mh_node'}[$expanded_node->{'move_hash_place'} + $tree_son] ];
+                my $hash = $t->{'node_hash'}[$t->{'mh_node'}[$expanded_node->{'move_hash_place'} + $tree_son]];
                 if (is_in_perimeter($hash, \$son_depth, 0)) {
                 }
             }
@@ -8042,7 +8051,6 @@ sub packing_search ($b_in, $time_allocation, $search_mode, $t, $h) {
         my $label = get_label_of_score(score_hash($t, $new_node->{'best_past'}), 1, $h);
         add_label_to_last_node($t, $label, $h);
         my $res = update_best_so_far($t, \$best_so_far, $new_node, 1, $search_mode);
-
         if ($res) {
             $cleared_all_targets = $iter_num if $cleared_all_targets != -1;
         }
@@ -8082,7 +8090,7 @@ sub packing_search ($b_in, $time_allocation, $search_mode, $t, $h) {
 } ## end sub packing_search
 
 sub init_dragonfly () {
-    $Dragonfly_nodes     = [];
+    $Dragonfly_nodes = [];
     dragonfly_init_queue(\%Dragonfly_q, $Dragonfly_nodes);
     return;
 }
@@ -8134,7 +8142,7 @@ sub dragonfly_get_board ($e) {
         Carp::confess('bad2') if vec($b, $p, 8) & OCCUPIED;
         vec($b, $p, 8) |= BOX;
     }
-    $b&.=$NOT_SOKOBAN;
+    $b &.= $NOT_SOKOBAN;
     my $sok_p = $p + $Delta_p[$player];
     vec($b, $sok_p, 8) |= SOKOBAN;
     $b = expand_sokoban_cloud($b, $sok_p);
@@ -8303,7 +8311,7 @@ sub _allocate () {
     init_dragonfly();
     $Tree = {};
     init_tree($Tree);
-    $Helper = Storable::dclone($HELPER_TEMPLATE);
+    $Helper    = Storable::dclone($HELPER_TEMPLATE);
     $Allocated = 1;
     return;
 }
@@ -8371,7 +8379,8 @@ sub initvars ($fest) {
 sub load_level ($blob, $alg) {
     my $fest = eval {Storable::thaw(Compress::Zlib::uncompress($blob))};
     Carp::confess('load_level: the frozen analysis is empty, corrupt, or stamped by analysis '
-            . "code this engine does not read (it reads '" . FEST_STAMP . "') "
+            . "code this engine does not read (it reads '"
+            . FEST_STAMP . "') "
             . '-- analyse the level again with Games::Sokoban::Solver::Festival::Analysis')
         unless ref $fest eq 'HASH' and ($fest->{'stamp'} // q{}) eq FEST_STAMP;
     $Girl_distance = [];
@@ -8381,8 +8390,8 @@ sub load_level ($blob, $alg) {
             . '-- the deadlock battery would be skipped with nothing standing in '
             . 'for it (Festival::Analysis::with_blok puts the Parser\'s table there)')
         if $BLOK_REPLACES and !exists $fest->{'blok'};
-    if   ($BLOK_REPLACES) {$Blok_usable = set_blok($fest->{'blok'}) > 0 ? 1 : 0}
-    else                  {undef %Blok_sets; $Blok_usable = 0}
+    if ($BLOK_REPLACES) {$Blok_usable = set_blok($fest->{'blok'}) > 0 ? 1 : 0}
+    else                {undef %Blok_sets; $Blok_usable = 0}
     undef $fest;
     %Cache                        = ();
     %Perimeter                    = ();
@@ -8526,7 +8535,7 @@ sub report_ending ($label, $gameid, $reason, $path, $doba) {
         (defined $path ? ($path =~ tr/UDRL//) : 0),
         $doba, q{}, sprintf('%.0f', $Solve_nseen / $doba), q{},
         ($Helper->{'sol_len'} // 0), $Solve_nseen;
-    barva($reason,$ending);
+    barva($reason, $ending);
     return;
 }
 
@@ -8542,8 +8551,8 @@ sub solve ($gameid, $blob, $limit = 60, $mode = undef) {
         ? ($FF_MODE{$mode} // Carp::confess("unknown Festival mode $mode"))
         : -1;
     $Next_poll = time() + ($alg > 0 ? $alg : 0);
-    $Tick      = 0;    # the race flag's own one-second gate, per solve
-    %Progress = ('label' => $mode // 'FF_ALL', 'gameid' => $gameid, 't0' => $t0, 'phase' => 'load');
+    $Tick      = 0;                                # the race flag's own one-second gate, per solve
+    %Progress  = ('label' => $mode // 'FF_ALL', 'gameid' => $gameid, 't0' => $t0, 'phase' => 'load');
     my $start_time = time();
     $Any_core_solved = 0;
     reset_helper($Helper);

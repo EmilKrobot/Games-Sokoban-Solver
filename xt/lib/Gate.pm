@@ -22,13 +22,10 @@ package Gate;
 # The gates that need the ORIGINAL module load it from the Sokoban tree; that
 # directory is appended to the END of @INC by baseline_lib(), after this tree's
 # lib/, so a name both trees have resolves to this tree.
-
 use v5.42;
-use Carp ();
+use Carp         ();
 use Data::Dumper ();
-
 our $VERSION = '0.01';
-
 my $SOKOBAN = 'C:/Workspace/Sokoban';
 my $DB_DIR  = $ENV{'SOKOBAN_DB_DIR'} // 'D:/Sokoban_data/db';
 
@@ -56,11 +53,10 @@ sub need_fixed_hash_seed () {
 # the original of a module beside its copy.  Returns the directory.
 sub baseline_lib () {
     my $lib = "$SOKOBAN/lib";
-    push @INC, $lib unless grep { $_ eq $lib } @INC;
+    push @INC, $lib unless grep {$_ eq $lib} @INC;
     return $lib;
 }
-
-sub sokoban_dir () { return $SOKOBAN }
+sub sokoban_dir () {return $SOKOBAN}
 
 # A read-only handle on one of the project's databases ('Sokoban' or
 # 'Patterns').  DBI and DBD::SQLite are author tools: they are not
@@ -71,14 +67,15 @@ sub db ($name) {
     my $file = "$DB_DIR/$name.sqlite3";
     Carp::croak("Gate: no database $file") unless -f $file;
     return DBI->connect(
-        "dbi:SQLite:dbname=$file", '', '',
+        "dbi:SQLite:dbname=$file",
+        '', '',
         {
             'RaiseError'        => 1,
             'PrintError'        => 0,
             'sqlite_open_flags' => DBD::SQLite::OPEN_READONLY(),
         }
     );
-}
+} ## end sub db
 
 # One canonical text for a data structure, so two structures compare as
 # strings: sorted keys, no indentation, no variable name.
@@ -92,13 +89,11 @@ sub canon ($ref) {
 
 # The verdict line every gate ends with; the exit status follows it.
 sub verdict ($failed, %count) {
-    my $counts = join(', ', map { "$_ $count{$_}" } sort keys %count);
+    my $counts = join(', ', map {"$_ $count{$_}"} sort keys %count);
     say(($failed ? 'FAILED' : 'ALL OK') . ($counts ? " ($counts)" : ''));
     return $failed ? 1 : 0;
 }
-
 1;
-
 __END__
 
 =head1 NAME

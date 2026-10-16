@@ -6,7 +6,7 @@
 # refused.
 use v5.42;
 use Test::More;
-use Config ();
+use Config      ();
 use Time::HiRes ();
 
 # THE TOY ENGINE: a mode is a word; 'WIN' solves in no time, 'SLOW' polls the
@@ -19,9 +19,9 @@ package Toy {
     sub solve ($label, $blob, $limit, $mode) {
         push @Calls, [$label, $mode, $blob, $CTL];
         $LastFail = '';
-        return ('SOLVED', 'rRdD', 0.01, 4) if $mode eq 'WIN';
+        return ('SOLVED', 'rRdD', 0.01, 4)               if $mode eq 'WIN';
         die "the toy engine was told to die on $label\n" if $mode eq 'DIE';
-        if ($mode eq 'FAIL') { $LastFail = 'no reason at all'; return ('FAILED', '', 0.02, 7) }
+        if ($mode eq 'FAIL') {$LastFail = 'no reason at all'; return ('FAILED', '', 0.02, 7)}
         my $t0 = Time::HiRes::time();
         while (Time::HiRes::time() - $t0 < $limit) {
             return ('IGNORE', '', Time::HiRes::time() - $t0, 1) if $RACE_FLAG && $RACE_FLAG->{$RACE_GID};
@@ -29,15 +29,13 @@ package Toy {
         }
         return ('TIMEOUT', '', $limit, 10);
     }
-}
-
+} ## end package Toy
 use Games::Sokoban::Solver::Race ();
-
-my $sum = sub (@n) { my $s = 0; $s += $_ for @n; return ($s, scalar @n) };
+my $sum = sub (@n) {my $s = 0; $s += $_ for @n; return ($s, scalar @n)};
 
 sub drain ($race) {
     my @r;
-    while (my $r = $race->next) { push @r, $r }
+    while (my $r = $race->next) {push @r, $r}
     return @r;
 }
 
@@ -50,7 +48,7 @@ sub drain ($race) {
 
     # B then A: the level is won, so A is IGNORE without running
     @Toy::Calls = ();
-    $race->submit(7, 'WIN', 'blob7', 5);
+    $race->submit(7, 'WIN',  'blob7', 5);
     $race->submit(7, 'SLOW', 'blob7', 5);
     my $r = $race->next;
     is($r->{'reason'}, 'SOLVED', 'serial: WIN solved');
@@ -62,8 +60,8 @@ sub drain ($race) {
     ok($r->{'wall'} > 0, 'wall measured');
     ok($race->solved(7), 'level 7 marked won');
     $r = $race->next;
-    is($r->{'reason'}, 'IGNORE', 'serial: a mode of a won level is IGNORE');
-    is(scalar @Toy::Calls, 1, 'and the engine was not called for it');
+    is($r->{'reason'},     'IGNORE', 'serial: a mode of a won level is IGNORE');
+    is(scalar @Toy::Calls, 1,        'and the engine was not called for it');
 
     # A then B on another level: A runs its limit, B wins
     my $t0 = Time::HiRes::time();
@@ -78,7 +76,11 @@ sub drain ($race) {
     @Toy::Calls = ();
     $race->submit(9, ['FAIL', 'WIN', 'SLOW'], 'blob9', 5, { 'blok_replaces' => 1 });
     @r = ($race->next, $race->next, $race->next);
-    is_deeply([map { $_->{'reason'} } @r], ['FAILED', 'SOLVED', 'IGNORE'], 'a list task: one row per mode, the rest IGNORE after the win');
+    is_deeply(
+        [map {$_->{'reason'}} @r],
+        ['FAILED', 'SOLVED', 'IGNORE'],
+        'a list task: one row per mode, the rest IGNORE after the win'
+    );
     is($r[0]{'fail'}, 'no reason at all', '$LastFail carried as fail');
     is_deeply($Toy::Calls[0][3], { 'blok_replaces' => 1 }, 'the control word reaches the engine as $CTL');
 
@@ -97,7 +99,7 @@ sub drain ($race) {
 
     # next_timed on the open serial pool: 0 when nothing is queued
     is($race->next_timed(1), 0, 'serial next_timed: 0 with nothing queued');
-    eval { $race->next };
+    eval {$race->next};
     like($@, qr/nothing queued/, 'serial next() on an open empty pool is refused');
 
     # stop() before the mode runs
@@ -105,12 +107,10 @@ sub drain ($race) {
     $race->submit(12, 'SLOW', 'blob12', 5);
     $r = $race->next;
     is($r->{'reason'}, 'IGNORE', 'stop() before the task: IGNORE at once');
-
-    eval { $race->submit_task('nosuch', 1) };
+    eval {$race->submit_task('nosuch', 1)};
     like($@, qr/no handler/, 'a kind without a handler is refused');
-
     $race->close;
-    eval { $race->submit(13, 'WIN', 'b', 1) };
+    eval {$race->submit(13, 'WIN', 'b', 1)};
     like($@, qr/after close/, 'submit after close refused');
     is($race->next, undef, 'closed and drained: undef');
     $race->join;
@@ -124,8 +124,8 @@ sub drain ($race) {
     $race->submit_task('sum', $_, 1 .. $_) for 1 .. 50;
     $race->close;
     my @r = drain($race);
-    is(scalar @r, 50, 'serial: fifty results');
-    is(scalar(grep { $_->{'payload'}[0] == $_->{'label'} * ($_->{'label'} + 1) / 2 } @r), 50, 'every sum right');
+    is(scalar @r,                                                                       50, 'serial: fifty results');
+    is(scalar(grep {$_->{'payload'}[0] == $_->{'label'} * ($_->{'label'} + 1) / 2} @r), 50, 'every sum right');
     $race->join;
 }
 
@@ -140,17 +140,17 @@ sub drain ($race) {
 
 # refusals of new() and start()
 {
-    eval { Games::Sokoban::Solver::Race->new('jobs' => 0) };
+    eval {Games::Sokoban::Solver::Race->new('jobs' => 0)};
     like($@, qr/at least 1/, 'jobs 0 refused');
-    eval { Games::Sokoban::Solver::Race->new('handlers' => { 'solve' => sub { } }) };
+    eval {Games::Sokoban::Solver::Race->new('handlers' => { 'solve' => sub { } })};
     like($@, qr/cannot be a handler/, "a handler named 'solve' refused");
-    eval { Games::Sokoban::Solver::Race->new('handlers' => { 'x' => 'notcode' }) };
+    eval {Games::Sokoban::Solver::Race->new('handlers' => { 'x' => 'notcode' })};
     like($@, qr/hash of kind/, 'a handler that is no code refused');
     my $race = Games::Sokoban::Solver::Race->new('engine' => 'No::Such::Engine');
-    eval { $race->start };
+    eval {$race->start};
     like($@, qr/not loaded/, 'an engine without solve() is refused at start');
     $race = Games::Sokoban::Solver::Race->new('engine' => 'Toy');
-    eval { $race->submit(1, 'WIN', 'b', 1) };
+    eval {$race->submit(1, 'WIN', 'b', 1)};
     like($@, qr/before start/, 'submit before start refused');
 }
 
@@ -178,7 +178,6 @@ PERL
 # --- the threaded backend ------------------------------------------------------
 SKIP: {
     skip 'this perl has no ithreads', 12 unless $Config::Config{'useithreads'};
-
     my $race = Games::Sokoban::Solver::Race->new('jobs' => 2, 'engine' => 'Toy', 'handlers' => { 'sum' => $sum });
     $race->start;
     is($race->threaded, 1, 'threads: the pool runs on threads');
@@ -195,7 +194,7 @@ SKIP: {
     }
     is($got{'WIN'}{'reason'},  'SOLVED', 'threads: WIN solved');
     is($got{'SLOW'}{'reason'}, 'IGNORE', 'threads: SLOW told to stop');
-    ok(Time::HiRes::time() - $t0 < 5, 'and it stopped well before its limit') or diag(Time::HiRes::time() - $t0);
+    ok(Time::HiRes::time() - $t0 < 5,                  'and it stopped well before its limit') or diag(Time::HiRes::time() - $t0);
     ok($got{'SLOW'}{'tid'} != $got{'WIN'}{'tid'} || 1, 'tids reported');
 
     # next_timed returns 0 while a task is still running
@@ -218,11 +217,10 @@ SKIP: {
         my $x = $race->next;
         push @sums, $x if $x->{'kind'} eq 'sum';
     }
-    is(scalar(grep { $_->{'payload'}[0] == $_->{'label'} * ($_->{'label'} + 1) / 2 } @sums), 50, 'threads: every sum right');
+    is(scalar(grep {$_->{'payload'}[0] == $_->{'label'} * ($_->{'label'} + 1) / 2} @sums), 50, 'threads: every sum right');
     $race->close;
     is($race->next, undef, 'threads: every worker done');
     $race->join;
     is(scalar(threads->list), 0, 'threads: all joined');
-}
-
+} ## end SKIP:
 done_testing;

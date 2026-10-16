@@ -55,4 +55,14 @@ Revision history for Games-Sokoban-Solver
       collection with threads and without, every path replayed on the level as
       drawn, no proof below a stored one). The round trip found a level the
       race had not solved reported SOLVED in the JSON: fixed before release.
+    - The finish: xt/surface.pl audits every module (a sub nobody calls, an
+      `our` nobody outside reads, a name of the Sokoban project, a bare exit)
+      -- two seam subs went and five knobs became lexical; every module has
+      its POD (the two inherited pod files name this distribution's modules
+      and say which of their gates and drivers stayed in the project);
+      t/16-pod.t; perltidy over the whole tree with the author's profile,
+      converged, every gate run again unchanged; maint/prereqs.pl holds
+      Makefile.PL to what the modules load; make dist, disttest and an install
+      into a prefix of its own pass; .github/workflows/test.yml runs the suite
+      and the program on Linux and Windows.
     - Skeleton created with h2xs 1.23 (-AX --skip-exporter --use-new-tests).

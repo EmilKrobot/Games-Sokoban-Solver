@@ -34,7 +34,8 @@ persistence of the result.
 It is built from the promoted baseline by a strip that resolves every
 experimental switch to the value the baseline ships with and removes the
 measuring apparatus entirely, so there is exactly one path through the code.
-Experiments belong in C<Games::Sokoban::Solver::Firstbet01>, never here.
+In the Sokoban project experiments belong in a slot beside the baseline, never
+here; this distribution carries the baseline alone.
 
 =head2 What solve() returns
 
@@ -42,7 +43,7 @@ C<solve($gameid, $blob, $limit, $mode)> returns four values. C<$limit> is
 seconds; C<0> means no time limit at all - the search then ends only on
 C<SOLVED>, C<MEMCAP>, C<IGNORE> or a mode's own C<GIVEUP>/C<NOCP>. That is
 the setting for an open-ended run of one mode on one game through
-F<app/first/berk_one.pl> (USER 2026-09-07), where the disk-backed stores are
+the Sokoban project's driver C<berk_one.pl>, where the disk-backed stores are
 what makes a run of hours possible; a race never uses it.
 
 =over 4
@@ -411,7 +412,7 @@ were put right on 2026-10-06, after the first long run of several games in one
 process (campaign berk-4: six backward searches, 1200 seconds) searched at a
 third of a core each and then sat for more than eight minutes after its limit
 without returning a single result. None of them is in this file - they live in
-C<Games::Berkeley>, which this module calls - but they decide how it behaves.
+C<Games::Sokoban::Solver::Berkeley>, which this module calls - but they decide how it behaves.
 
 B<The memory pool was not the size that was asked for.> The size is handed to the
 database library in bytes, and the Perl binding keeps it in a 32-bit integer and
@@ -554,7 +555,8 @@ the time watchdogs, so that no mode can step over one.
 
 =head1 GATES
 
-C<ai/eq_berk_new.pl> compares this module against the baseline: same games,
+The Sokoban project's C<ai/eq_berk_new.pl> (here C<xt/eq_firstbet_berk.pl>)
+compares this module against the baseline: same games,
 same modes, same limit, fixed hash seed.
 
 Only rows that solve on both sides carry a verdict, and that is the only honest
@@ -712,7 +714,7 @@ Regenerating this twin from the 3.1 baseline turned up a fault that had been
 shipping since the seam was first written, and it is worth recording because
 nothing about it was visible from outside.
 
-C<Games::Berkeley::fb_pos_del> returns nothing. C<node_del> handed that result
+C<Games::Sokoban::Solver::Berkeley::fb_pos_del> returns nothing. C<node_del> handed that result
 straight back as its own, so C<set_bad>'s cascade - which reads it, as
 C<if (my $father = node_del($pozice))>, to prune the father's move list and to
 kill the father when nothing is left of it - was ALWAYS FALSE on disk. The
@@ -735,7 +737,21 @@ again, and how much has not been measured.
 =head1 SEE ALSO
 
 L<Games::Sokoban::Solver::Firstbet> - the baseline this twin mirrors.
-L<Games::Sokoban::Solver::Firstbet01> - the experiment slot, where changes are made.
-L<Games::Berkeley> - the database layer and the location of the environments.
+
+L<Games::Sokoban::Solver::Berkeley> - the database layer and the location of the environments.
+
+L<Games::Sokoban::Solver> - the facade, which sends Firstbet's modes here when asked to.
+
+=head1 AUTHOR
+
+Jiri Broz, E<lt>jiri.krobot.broz@gmail.comE<gt>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2026 by Jiri Broz
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.42.2 or,
+at your option, any later version of Perl 5 you may have available.
 
 =cut

@@ -33,12 +33,11 @@ no warnings 'once';    # the original's package variables are set once each
 use FindBin ();
 use lib "$FindBin::Bin/../lib", "$FindBin::Bin/lib";
 use Gate;
-use Getopt::Long ();
-use File::Temp   ();
+use Getopt::Long                    ();
+use File::Temp                      ();
 use Games::Sokoban::Solver::Optimal ();
 use Games::Sokoban::Solver::Replay  ();
 STDOUT->autoflush(1);
-
 my %opt = ('limit' => 60, 'gameids' => '', 'modes' => 'DIAL,ASTAR,FIFO', 'spoil' => 0);
 Getopt::Long::GetOptions(\%opt, 'limit=f', 'gameids=s', 'modes=s', 'spoil!')
     or die "usage: eq_optimal.pl [--limit S] [--gameids L] [--modes M,M] [--spoil]\n";
@@ -48,27 +47,29 @@ Gate::need_fixed_hash_seed();
 # scratch SQL log and its caches in RAM. By its FILE: the original's package is
 # Games::Sokoban::Solver, the name of this distribution's facade, so `require
 # Games::Sokoban::Solver` would find the facade in this tree's lib first.
-my @berk = grep { m{Berkeley|DBI|Zapis|SokDB} } keys %INC;    # what the COPY loaded, before the original comes
+my @berk     = grep {m{Berkeley|DBI|Zapis|SokDB}} keys %INC;        # what the COPY loaded, before the original comes
 my $baseline = Gate::baseline_lib() . '/Games/Sokoban/Solver.pm';
 require $baseline;
 die "the original was not loaded from the Sokoban tree\n" unless $INC{$baseline} and defined &Games::Sokoban::Solver::hledej;
 my $log = File::Temp->new('SUFFIX' => '.sql');
 $Games::Sokoban::Solver::PERSIST = 0;
 $Games::Sokoban::Solver::LOG     = "$log";
-
 my $ours   = 'Games::Sokoban::Solver::Optimal';
 my $theirs = 'Games::Sokoban::Solver';
+
 for my $pkg ($ours, $theirs) {
     no strict 'refs';
     ${"${pkg}::QUIET"}  = 2;
     ${"${pkg}::MAX_GB"} = 0;
     ${"${pkg}::LIMIT"}  = $opt{'limit'};
 }
-
-my $db  = Gate::db('Sokoban');
-my @ids = length $opt{'gameids'} ? grep { /\A\d+\z/ } split /[,\s]+/, $opt{'gameids'} : (7985, 2066, 14637, 37928, 41519, 27701, 3413, 7265, 1);
-my @modes = split /,/, $opt{'modes'};
-my %n = ('ok' => 0, 'mismatch' => 0, 'skip' => 0, 'prefix_differ' => 0, 'over_optimum' => 0, 'unplayable' => 0, 'died' => 0);
+my $db = Gate::db('Sokoban');
+my @ids =
+    length $opt{'gameids'}
+    ? grep {/\A\d+\z/} split /[,\s]+/, $opt{'gameids'}
+    : (7985, 2066, 14637, 37928, 41519, 27701, 3413, 7265, 1);
+my @modes  = split /,/, $opt{'modes'};
+my %n      = ('ok' => 0, 'mismatch' => 0, 'skip' => 0, 'prefix_differ' => 0, 'over_optimum' => 0, 'unplayable' => 0, 'died' => 0);
 my $failed = 0;
 
 sub game_of ($gameid) {
@@ -80,19 +81,19 @@ SQL
     die "game $gameid: no stored analysis or first solution\n" unless defined $blob and defined $seed;
     return ($blob, $code, $seed, $optimum);
 }
-
 my %died;
+
 sub qsolve ($pkg, $mode, $gameid, $blob, $seed) {
     no strict 'refs';
-    ${"${pkg}::MODE"} = $mode;
+    ${"${pkg}::MODE"}  = $mode;
     @{"${pkg}::Track"} = ();
     my @r = do {
         local *STDERR;
         open STDERR, '>', \my $junk;
-        eval { &{"${pkg}::solve"}($gameid, $blob, $seed) };
+        eval {&{"${pkg}::solve"}($gameid, $blob, $seed)};
     };
-    unless (@r) { $died{"$gameid $mode $pkg"} = (split /\n/, "$@")[0] // 'died without a word'; return ('DIE', undef, 0, 0, 0, []) }
-    return (@r, [map { $_->{'sollen'} } @{"${pkg}::Track"}]);
+    unless (@r) {$died{"$gameid $mode $pkg"} = (split /\n/, "$@")[0] // 'died without a word'; return ('DIE', undef, 0, 0, 0, [])}
+    return (@r, [map {$_->{'sollen'}} @{"${pkg}::Track"}]);
 }
 
 # One pair compared; returns a verdict and prints the differences.
@@ -104,10 +105,12 @@ sub compare ($gameid, $mode, $code, $optimum, $a, $b, $what_b = 'orig') {
         my ($who, $reason, $path) = @$side;
         next unless $reason eq 'SOLVED';
         if (defined(my $err = Games::Sokoban::Solver::Replay::check($code, $path // ''))) {
-            ++$n{'unplayable'}; printf "UNPLAYABLE g=%-6d %-5s %s: %s\n", $gameid, $mode, $who, $err;
+            ++$n{'unplayable'};
+            printf "UNPLAYABLE g=%-6d %-5s %s: %s\n", $gameid, $mode, $who, $err;
         }
         if (defined $optimum and length($path // '') > $optimum) {
-            ++$n{'over_optimum'}; printf "OVER OPTIMUM g=%-6d %-5s %s: proved %d, stored optimum %d\n", $gameid, $mode, $who, length $path, $optimum;
+            ++$n{'over_optimum'};
+            printf "OVER OPTIMUM g=%-6d %-5s %s: proved %d, stored optimum %d\n", $gameid, $mode, $who, length $path, $optimum;
         }
     }
     my $common = @$atrack < @$btrack ? scalar @$atrack : scalar @$btrack;
@@ -128,20 +131,21 @@ sub compare ($gameid, $mode, $code, $optimum, $a, $b, $what_b = 'orig') {
         printf "REASON   g=%-6d %-5s ours=%s %s=%s\n", $gameid, $mode, $ar, $what_b, $br;
         $verdict = 'mismatch';
     }
-    elsif ($ar ne 'SOLVED' or $br ne 'SOLVED') { $verdict = 'skip' if $verdict eq 'ok' }
+    elsif ($ar ne 'SOLVED' or $br ne 'SOLVED') {$verdict = 'skip' if $verdict eq 'ok'}
     return $verdict;
-}
-
+} ## end sub compare
 if ($opt{'spoil'}) {
     my %before = %n;    # what the spoiled pair reports is not a finding of the run
     my ($blob, $code, $seed, $optimum) = game_of(7265);
     $Games::Sokoban::Solver::Optimal::BAND = 0;
     my @a = qsolve($ours, 'FIFO', 7265, $blob, $seed);
     $Games::Sokoban::Solver::Optimal::BAND = 2;
-    my @b = qsolve($theirs, 'FIFO', 7265, $blob, $seed);
+    my @b       = qsolve($theirs, 'FIFO', 7265, $blob, $seed);
     my $verdict = compare(7265, 'FIFO', $code, $optimum, \@a, \@b, 'band2');
-    if ($verdict eq 'mismatch') { say 'spoil: the copy without the band against the original with it on game 7265 is reported -- the gate fires' }
-    else                        { say "spoil: NOT CAUGHT ($verdict)"; $failed = 1 }
+    if ($verdict eq 'mismatch') {
+        say 'spoil: the copy without the band against the original with it on game 7265 is reported -- the gate fires';
+    }
+    else {say "spoil: NOT CAUGHT ($verdict)"; $failed = 1}
     %n = %before;
 }
 
@@ -151,20 +155,20 @@ if ($opt{'spoil'}) {
 {
     my ($blob, $code, $seed) = game_of(7265);
     my $calls = 0;
-    $Games::Sokoban::Solver::Optimal::ON_IMPROVED = sub ($path, $cas) { ++$calls; die "ON_IMPROVED: no path\n" unless length $path };
+    $Games::Sokoban::Solver::Optimal::ON_IMPROVED =
+        sub ($path, $cas) {++$calls; die "ON_IMPROVED: no path\n" unless length $path};
     my @a = qsolve($ours, 'DIAL', 7265, $blob, $seed);
     $Games::Sokoban::Solver::Optimal::ON_IMPROVED = undef;
     my $track = scalar @{ $a[5] };
-    if    ($calls == 0)      { say "ON_IMPROVED: never called on game 7265 ($a[0]) -- the check tested nothing"; $failed = 1 }
-    elsif ($calls == $track) { say "ON_IMPROVED: called $calls time(s) on game 7265, one per improvement" }
-    else                     { say "ON_IMPROVED: called $calls time(s), \@Track has $track"; $failed = 1 }
+    if    ($calls == 0)      {say "ON_IMPROVED: never called on game 7265 ($a[0]) -- the check tested nothing"; $failed = 1}
+    elsif ($calls == $track) {say "ON_IMPROVED: called $calls time(s) on game 7265, one per improvement"}
+    else                     {say "ON_IMPROVED: called $calls time(s), \@Track has $track"; $failed = 1}
 }
-
 for my $gameid (@ids) {
     my ($blob, $code, $seed, $optimum) = game_of($gameid);
     for my $mode (@modes) {
-        my @a = qsolve($ours,   $mode, $gameid, $blob, $seed);
-        my @b = qsolve($theirs, $mode, $gameid, $blob, $seed);
+        my @a       = qsolve($ours,   $mode, $gameid, $blob, $seed);
+        my @b       = qsolve($theirs, $mode, $gameid, $blob, $seed);
         my $verdict = compare($gameid, $mode, $code, $optimum, \@a, \@b);
         ++$n{$verdict};
         printf {*STDERR} "\r%d %-5s %-8s %-8s %s   ", $gameid, $mode, $a[0], $b[0], $verdict;
@@ -173,6 +177,6 @@ for my $gameid (@ids) {
 print {*STDERR} "\n";
 $n{'died'} = scalar keys %died;
 say "DIED $_: $died{$_}" for sort keys %died;
-if (@berk) { say "the copy loaded a storage module: @berk"; $failed = 1 }
+if (@berk) {say "the copy loaded a storage module: @berk"; $failed = 1}
 $failed = 1 if $n{'mismatch'} or $n{'prefix_differ'} or $n{'over_optimum'} or $n{'unplayable'} or $n{'died'};
 exit Gate::verdict($failed, %n);

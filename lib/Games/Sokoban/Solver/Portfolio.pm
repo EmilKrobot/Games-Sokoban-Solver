@@ -22,16 +22,14 @@ package Games::Sokoban::Solver::Portfolio;
 # Lineage: Games::Sokoban::Portfolio 0.01 and Games::Sokoban::Tandem 0.02 of
 # the Sokoban project, and the panel of waves of its driver wave_batch.pl
 # (2026-10-13/14), which is where the order of the race comes from.
-
 use v5.42;
 use warnings FATAL => 'uninitialized';
 no warnings 'once';
-use Carp ();
+use Carp                              ();
 use Games::Sokoban::Solver::Firstbet  ();
 use Games::Sokoban::Solver::FirstBack ();
 use Games::Sokoban::Solver::Festival  ();
 use Games::Sokoban::Solver::Fest      ();
-
 our $VERSION = '0.01';
 
 # The race signal and the per-task control word, set by Race on THIS package
@@ -74,8 +72,8 @@ my %OWN_LIMIT = ('ORDER' => 30);
 # one (measured on the project's unsolved levels at 900 s). The default caps:
 # one pull search and three forward modes in flight.
 my %KIND = (
-    (map { $_ => 'pull' } 'BACKWARD', 'FIRSTBACK'),
-    (map { $_ => 'forward' } 'FEATURE', 'FLOW', 'MOVE_SCORE', 'MOVE_SUM', 'PUSH_ASSIGN', 'PUSH_SCORE', 'ROUTE'),
+    (map {$_ => 'pull'} 'BACKWARD', 'FIRSTBACK'),
+    (map {$_ => 'forward'} 'FEATURE', 'FLOW', 'MOVE_SCORE', 'MOVE_SUM', 'PUSH_ASSIGN', 'PUSH_SCORE', 'ROUTE'),
 );
 my %CAP = ('forward' => 3, 'pull' => 1);
 
@@ -97,6 +95,24 @@ Games::Sokoban::Solver::Portfolio - the 27 modes, the order of the race, and one
     # as the engine of a Race pool
     my ($reason, $path, $secs, $nseen) = Games::Sokoban::Solver::Portfolio::solve($label, $blob, $limit, $mode);
 
+=head1 DESCRIPTION
+
+One home for the policy of the race and one engine face for four engines.
+The policy: which modes exist (27, in Firstbet, FirstBack, Festival and
+Fest), in what order the race starts them, which has a limit of its own, which
+kind a mode is for the caps on what runs at once, and which analysis each
+engine takes -- every list a literal in one place or asked of the engine that
+owns it, because a mode list copied into several drivers drifts. The face:
+L<Games::Sokoban::Solver::Race> calls one package's C<solve>, and two pools
+in one process deadlock, so the engine is a property of the task: C<solve>
+here routes by the name of the mode and copies the race signal down and the
+engine's account of a stop back up.
+
+The order of the race is the one the Sokoban project arrived at for its
+unsolved levels, read off a matrix of every mode on every solved level: who
+solved most, then who adds most. CONVEYOR goes last because on most levels it
+answers NOCP at once and was never the only mode to solve a level.
+
 =head1 SUBROUTINES
 
 =head2 firstbet_modes, firstback_modes, festival_modes, fest_modes
@@ -107,10 +123,10 @@ asked of the engines themselves, so this module can never disagree with them.
 
 =cut
 
-sub firstbet_modes ()  { return @FIRSTBET }
-sub firstback_modes () { return ('FIRSTBACK') }
-sub festival_modes ()  { return Games::Sokoban::Solver::Festival::modes() }
-sub fest_modes ()      { return Games::Sokoban::Solver::Fest::modes() }
+sub firstbet_modes ()  {return @FIRSTBET}
+sub firstback_modes () {return ('FIRSTBACK')}
+sub festival_modes ()  {return Games::Sokoban::Solver::Festival::modes()}
+sub fest_modes ()      {return Games::Sokoban::Solver::Fest::modes()}
 
 =head2 all_modes
 
@@ -118,7 +134,7 @@ All 27, engine by engine: Firstbet, FirstBack, Festival, Fest.
 
 =cut
 
-sub all_modes () { return (firstbet_modes(), firstback_modes(), festival_modes(), fest_modes()) }
+sub all_modes () {return (firstbet_modes(), firstback_modes(), festival_modes(), fest_modes())}
 
 =head2 race_order
 
@@ -127,7 +143,7 @@ order comes from).
 
 =cut
 
-sub race_order () { return @RACE }
+sub race_order () {return @RACE}
 
 =head2 solver_modes
 
@@ -136,7 +152,7 @@ them.
 
 =cut
 
-sub solver_modes () { return @SOLVER }
+sub solver_modes () {return @SOLVER}
 
 =head2 own_limit
 
@@ -146,7 +162,7 @@ A mode's own limit in seconds, whatever the race's, or undef.
 
 =cut
 
-sub own_limit ($mode) { return $OWN_LIMIT{$mode} }
+sub own_limit ($mode) {return $OWN_LIMIT{$mode}}
 
 =head2 kind_of, default_caps
 
@@ -158,8 +174,8 @@ The kind of a mode for the caps on what runs at once, and the default caps
 
 =cut
 
-sub kind_of ($mode)  { return $KIND{$mode} // 'light' }
-sub default_caps ()  { return %CAP }
+sub kind_of ($mode) {return $KIND{$mode} // 'light'}
+sub default_caps () {return %CAP}
 
 =head2 engine_for, blob_for
 
@@ -208,13 +224,14 @@ sub solve ($label, $blob, $limit = 60, $mode = undef) {
     ${"${pkg}::RACE_FLAG"} = $RACE_FLAG;
     ${"${pkg}::RACE_GID"}  = $RACE_GID;
     if (ref $CTL eq 'HASH') {
-        $Games::Sokoban::Solver::Festival::BLOK_REPLACES = $CTL->{'blok_replaces'} if defined $CTL->{'blok_replaces'} and $pkg =~ /Festival\z/;
-        $Games::Sokoban::Solver::Fest::BLOK              = $CTL->{'blok'}          if defined $CTL->{'blok'} and $pkg =~ /Fest\z/;
+        $Games::Sokoban::Solver::Festival::BLOK_REPLACES = $CTL->{'blok_replaces'}
+            if defined $CTL->{'blok_replaces'} and $pkg =~ /Festival\z/;
+        $Games::Sokoban::Solver::Fest::BLOK = $CTL->{'blok'} if defined $CTL->{'blok'} and $pkg =~ /Fest\z/;
     }
     my @r = &{"${pkg}::solve"}($label, $blob, $limit, $mode);
     $LastFail = ${"${pkg}::LastFail"} // q{};
     return @r;
-}
+} ## end sub solve
 
 =head2 consistent
 
@@ -233,22 +250,21 @@ sub consistent () {
     ++$all{$_} for all_modes();
     my %race;
     ++$race{$_} for @RACE;
-    push @problems, "mode $_ is in no engine's list but in the race order" for grep { !$all{$_} } sort keys %race;
-    push @problems, "mode $_ is in the race order " . $race{$_} . ' times' for grep { $race{$_} > 1 } sort keys %race;
-    push @problems, "mode $_ of an engine is not in the race order" for grep { !$race{$_} } sort keys %all;
-    push @problems, "mode $_ is listed twice by the engines" for grep { $all{$_} > 1 } sort keys %all;
-    push @problems, "$_ has a limit of its own but is no mode" for grep { !$all{$_} } sort keys %OWN_LIMIT;
-    push @problems, "$_ has a kind but is no mode" for grep { !$all{$_} } sort keys %KIND;
-    push @problems, "kind $_ has no cap" for grep { !$CAP{$_} } sort { $a cmp $b } keys %{ { map { $_ => 1 } values %KIND } };
+    push @problems, "mode $_ is in no engine's list but in the race order" for grep {!$all{$_}} sort keys %race;
+    push @problems, "mode $_ is in the race order " . $race{$_} . ' times' for grep {$race{$_} > 1} sort keys %race;
+    push @problems, "mode $_ of an engine is not in the race order"        for grep {!$race{$_}} sort keys %all;
+    push @problems, "mode $_ is listed twice by the engines"               for grep {$all{$_} > 1} sort keys %all;
+    push @problems, "$_ has a limit of its own but is no mode"             for grep {!$all{$_}} sort keys %OWN_LIMIT;
+    push @problems, "$_ has a kind but is no mode"                         for grep {!$all{$_}} sort keys %KIND;
+    push @problems, "kind $_ has no cap" for grep {!$CAP{$_}} sort {$a cmp $b} keys %{ { map {$_ => 1} values %KIND } };
+
     for my $mode (sort keys %all) {
         my $pkg = engine_for($mode);
         push @problems, "mode $mode routes to $pkg, which has no solve" unless $pkg->can('solve');
     }
     return @problems;
-}
-
+} ## end sub consistent
 1;
-
 __END__
 
 =head1 AUTHOR

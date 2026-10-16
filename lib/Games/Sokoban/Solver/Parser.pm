@@ -28,25 +28,19 @@ package Games::Sokoban::Solver::Parser;
 # keys no engine reads -- gate / has_gate (the articulation points) and homes.
 # Everything else is the original's text; the gate xt/eq_parser.pl holds the
 # output to the project's stored blobs key for key.
-
 use v5.42;
 use feature ('refaliasing', 'declared_refs');
-no warnings ('experimental::refaliasing', 'once');
+no warnings('experimental::refaliasing', 'once');
 use Carp           ();
 use Compress::Zlib ();
-use List::Util     ('uniq');
-use Storable       ('dclone');
-use Time::HiRes    ();
+use List::Util ('uniq');
+use Storable   ('dclone');
+use Time::HiRes                    ();
 use Games::Sokoban::Solver::Finder ();
-
 our $VERSION = '0.01';
-
-my (
-    %Game,    $W,      %Cells,     %Cg,       %Cm,   %Cmk,   %Avoid,     @Maze,  @Baggage, $Nbox,
-    %Targets, %PatPoz, %PatList,   %Seen,     %Bad,  %Vyp,   @Det_cells, %Bloky, @Goal,    %Goal,
-    @Buf,     @Walls,  %Corridors, %Priority, %Route, %Rm,    %Order,     %PaintCache, @Checkpoints
-);
-
+my (%Game, $W, %Cells, %Cg, %Cm, %Cmk, %Avoid, @Maze, @Baggage, $Nbox,
+    %Targets, %PatPoz, %PatList,   %Seen,     %Bad,   %Vyp, @Det_cells, %Bloky,      @Goal, %Goal,
+    @Buf,     @Walls,  %Corridors, %Priority, %Route, %Rm,  %Order,     %PaintCache, @Checkpoints);
 
 sub initvars() {
     $W     = $Game{'w'};
@@ -161,7 +155,6 @@ sub cm() {
     prune_unreachable();
 } ## end sub cm
 
-
 sub transpose (@lines) {
     my @c;
     foreach $_ (@lines) {
@@ -170,7 +163,6 @@ sub transpose (@lines) {
     }
     return @c;
 }
-
 
 sub standardize($pattern) {
     my @lines = unpack('(a5)*', $pattern);
@@ -250,9 +242,8 @@ sub patterns() {
             }
         }
         prune_unreachable();
-    } ## end if (@remove)
+    }
 } ## end sub patterns
-
 
 # The bloks of every pattern of the level, from the blok source: a procedure
 # ($patlist, nbox => N, deadline => T) -> (\%bloks, \@report), %bloks a blok
@@ -265,7 +256,8 @@ sub bloky($source, $deadline, $report) {
     my ($bloks, $rows) = ({}, []);
     if (defined $source and %PatList) {
         ($bloks, $rows) = $source->(\%PatList, 'nbox' => $nbox, 'deadline' => $deadline);
-        Carp::croak('Parser: the blok source must return (\%bloks, \@report)') unless ref $bloks eq 'HASH' and ref $rows eq 'ARRAY';
+        Carp::croak('Parser: the blok source must return (\%bloks, \@report)')
+            unless ref $bloks eq 'HASH' and ref $rows eq 'ARRAY';
     }
     foreach my $pattern (keys %PatList) {
         my $str = $bloks->{$pattern} // '';
@@ -289,17 +281,16 @@ sub bloky($source, $deadline, $report) {
                 vec($vec, $t + $_, 1) = 1 foreach @v[@bl];
                 push @{ $Bloky{$bx}{$t} }, $vec;
             }
-        }
-    }
+        } ## end foreach my $t (@{ $Cmk{$bx}...})
+    } ## end foreach my $bx (keys %Cmk)
     $Game{'blok'} = dclone \%Bloky;
     if ($report) {
         $report->{'blok'}          = $rows;
         $report->{'patpoz'}        = dclone \%PatPoz;
         $report->{'patterns'}      = scalar keys %PatList;
-        $report->{'blok_complete'} = (defined $source and !grep { $_->[2] < $_->[1] } @$rows) ? 1 : 0;
+        $report->{'blok_complete'} = (defined $source and !grep {$_->[2] < $_->[1]} @$rows) ? 1 : 0;
     }
 } ## end sub bloky
-
 
 sub walls() {
 
@@ -411,7 +402,6 @@ sub _macro_levels($cells_ref, $patt, $max_ti = undef) {
     return \@levels;
 } ## end sub _macro_levels
 
-
 sub corridor() {
     $Game{'has_corridor'} = 0;
     foreach my $x (keys %Cm) {
@@ -454,7 +444,6 @@ sub corridor() {
     }
 } ## end sub corridor
 
-
 sub enrich_holes() {
     return unless $Game{'has_hole'};
     my $holes = $Game{'hole'};
@@ -487,7 +476,6 @@ sub paint_reach($man, @baggage) {
     }
     return %cg;
 } ## end sub paint_reach
-
 
 sub reachable($g, @obstacle) {
     my %obst = map(($_, 1), @obstacle);
@@ -537,7 +525,6 @@ sub reachable($g, @obstacle) {
     return 0;
 } ## end sub reachable
 
-
 # Fill-order search: assign an increasing rank (into %Priority) to each goal in
 # @$todo that becomes push-reachable once the still-unfilled goals are treated as
 # obstacles, iterated to a fixed point. A SEPARATE procedure so priority() can
@@ -563,7 +550,7 @@ sub order($todo, $odr) {
             last unless @ngoal;
             @goal = @ngoal;
         }
-    }
+    } ## end while ($zmena)
     return (\@ngoal, $odr);
 } ## end sub order
 
@@ -582,10 +569,10 @@ sub order_peel($allgoal) {
     my $odr   = 0;
     while ($found and @goal) {
         $found = 0;
-        my %f  = ();
+        my %f = ();
     GOAL: foreach my $g (@goal) {
             my @bags   = grep {$_ != $g} @goal;
-            my %target = map {($_, 1)} @bags;
+            my %target = map  {($_, 1)} @bags;
             foreach my $bx (@Baggage) {
                 next if $bx == $g;
                 my $man;
@@ -606,7 +593,7 @@ sub order_peel($allgoal) {
                         next if $target{$x};
                         my $s = $Cm{$box}{$x};
                         next unless $cg{$s};
-                        if ($x == $g) { $found = 1; $f{$g} = 1; next GOAL; }
+                        if ($x == $g) {$found = 1; $f{$g} = 1; next GOAL;}
                         my $child = pack('nn', $box, $x);
                         next if $seen{$child}++;
                         push @heap, $child;
@@ -658,13 +645,11 @@ sub priority() {
     # empirically stronger one). The peel needs no checkpoints, so a complete
     # peel also short-circuits the P1 machinery below.
     my %peel = order_peel(\@allgoal);
-
     $Priority{$_} = 1 foreach grep {$start_box{$_}} @allgoal;    # a box already on a goal = rank 1
     my @todo = grep {!$start_box{$_}} @allgoal;
     my ($ngoal, $odr) = order(\@todo, 1);
-
-    if (!@$ngoal) {                                             # CASE 1: full order, no checkpoints
-        %Priority = %peel if %peel and _rank_depth(\%peel) >= _rank_depth(\%Priority);
+    if (!@$ngoal) {                                              # CASE 1: full order, no checkpoints
+        %Priority          = %peel if %peel and _rank_depth(\%peel) >= _rank_depth(\%Priority);
         $Game{'has_order'} = 1;
         $Game{'order'}     = dclone \%Priority;
         return;
@@ -691,8 +676,8 @@ sub priority() {
     FIND: foreach my $g (@rest) {
             foreach my $t (@{ $Cmk{$g} }) {
                 next if $avoid_park{$t} || $used_P{$t};
-                next unless grep {$_ == $g} @{ $Cmk{$t} };      # t -> g is a valid single push (the tail push)
-                my $stance = $Cm{$t}{$g};                       # player pushes t -> g from here
+                next unless grep {$_ == $g} @{ $Cmk{$t} };    # t -> g is a valid single push (the tail push)
+                my $stance = $Cm{$t}{$g};                     # player pushes t -> g from here
                 next unless defined $stance && !$Goal{$stance};
                 ($ga, $P) = ($g, $t);
                 last FIND;
@@ -705,7 +690,7 @@ sub priority() {
         @rest = grep {$_ != $ga} @rest;
         ($ngoal, $odr) = order(\@rest, $odr);
         @rest = @$ngoal;
-    }
+    } ## end while (@rest && $budget)
 
     # CASE 2 requires: everything ordered now, checkpoints exist, the preference set
     # has exactly nbox cells, and pref_sols() builds >=1 finishing tail.
@@ -716,26 +701,25 @@ sub priority() {
             my ($ga, $P) = @$cp;
             delete $pref{$ga};
             $pref{$P}      = 1;
-            $Priority{$P}  = $high;                             # P staged first (top rank)
-            $Priority{$ga} = 0 unless defined $Priority{$ga};   # ga stays a real goal (value_score reads its rank)
+            $Priority{$P}  = $high;                              # P staged first (top rank)
+            $Priority{$ga} = 0 unless defined $Priority{$ga};    # ga stays a real goal (value_score reads its rank)
         }
         if (keys %pref == scalar @Baggage) {
             @Checkpoints = @checkpoints;
-            if (pref_sols(\%pref)) {                            # appends box-on-P terminals + tails; true if >=1 built
+            if (pref_sols(\%pref)) {                             # appends box-on-P terminals + tails; true if >=1 built
                 $Game{'has_order'} = 1;
                 $Game{'order'}     = dclone \%Priority;
                 return;
             }
-            @Checkpoints = ();                                  # tails failed -> undo, fall to CASE 3
+            @Checkpoints = ();                                   # tails failed -> undo, fall to CASE 3
         }
-    }
+    } ## end if (!@rest && @checkpoints)
 
     # CASE 3: cannot order -> flat {goal => 1}.
     %Priority          = map(($_, 1), keys %Goal);
     $Game{'order'}     = {%Priority};
     $Game{'has_order'} = 0;
 } ## end sub priority
-
 
 # Shortest player walk from $from to $to over %Cg, treating the cells in %$block
 # as walls. Returns the move string (lowercase l/r/u/d, the get_path() convention)
@@ -747,7 +731,7 @@ sub _walk_moves($from, $to, $block) {
     my @q = ($from);
     $seen{$from} = 1;
     my $found = 0;
-    OUTER: while (@q) {
+OUTER: while (@q) {
         my $x = shift @q;
         foreach my $y (@{ $Cg{$x} // [] }) {
             next if $seen{$y} || $block->{$y};
@@ -763,7 +747,7 @@ sub _walk_moves($from, $to, $block) {
     my ($s, $p) = ('', $from);
     foreach my $n (@path) {$s .= $pis{ $n - $p }; $p = $n}
     return $s;
-}
+} ## end sub _walk_moves
 
 # All orderings of @$list (recursive; @Checkpoints is at most 2 long, so this is
 # tiny). Used because the checkpoints are not order-independent: finishing P1 first
@@ -785,7 +769,7 @@ sub _permute($list) {
 # undef if any step is infeasible on the idealized board.
 sub _tail_order($player, $boxes_ref, $order) {
     my %pis  = (-1, 'l', 1, 'r', $W, 'd', -$W, 'u');
-    my %box  = %$boxes_ref;    # occupied cells (the substituted goal set), mutated as we push
+    my %box  = %$boxes_ref;                            # occupied cells (the substituted goal set), mutated as we push
     my $cur  = $player;
     my $tail = '';
     foreach my $cp (@$order) {
@@ -798,11 +782,11 @@ sub _tail_order($player, $boxes_ref, $order) {
         return undef unless defined $push;
         $tail .= $walk . uc $push;
         delete $box{$P};
-        $box{$ga} = 1;    # box moved P -> ga
-        $cur = $P;        # player ends on P after the push
+        $box{$ga} = 1;                                   # box moved P -> ga
+        $cur = $P;                                       # player ends on P after the push
     }
     return $tail;
-}
+} ## end sub _tail_order
 
 # The "tail": from the preference-solved player position ($player = a $Game{sols}
 # key's player, with every box but the parked ones already on its goal), the moves
@@ -851,14 +835,13 @@ sub pref_sols($pref) {
         foreach my $t (@{ $Cmk{$bx}; }) {
             next unless $pref->{$t};
             my $tail = _tail_moves($bx, $pref);
-            next unless defined $tail;             # skip an idealized-infeasible stance
+            next unless defined $tail;    # skip an idealized-infeasible stance
             $Game{'sols'}{ pack $Game{'vzp'}, $bx, @search } = $tail;
             ++$added;
         }
     }
     return $added;
-}
-
+} ## end sub pref_sols
 
 sub reverse_moves() {
     foreach my $x (keys %Cm) {
@@ -890,7 +873,6 @@ sub paint($man, $box) {
     }
     return $PaintCache{$key} = \%cg;
 } ## end sub paint
-
 
 sub find_route($bx, $g) {
     my (@heap, $n_open, %seen, %parent, $bestlen, $bestbet);
@@ -938,7 +920,6 @@ sub find_route($bx, $g) {
     return ($bestlen, @postup);
 } ## end sub find_route
 
-
 # Concrete shortest player-walk from $from to $to over the walk graph %Cg with a
 # single box cell as an obstacle. Returns the list of cells ON that walk (order
 # irrelevant -- it feeds a set). Empty if unreachable.
@@ -957,9 +938,9 @@ WALK: while (@q) {
     }
     return () unless exists $prev{$to};
     my (@path, $c);
-    for ($c = $to; $c != -1; $c = $prev{$c}) { push @path, $c; }
+    for ($c = $to; $c != -1; $c = $prev{$c}) {push @path, $c;}
     return @path;
-}
+} ## end sub _walk_cells
 
 # The dedup set of cells that must be EMPTY (of any OTHER box) for the macro "push
 # the box along @$moves (box-cell sequence starting at $bx) onto the goal" to be
@@ -972,19 +953,19 @@ WALK: while (@q) {
 # instead of O(route length).
 sub _macro_cells($bx, $moves) {
     return {} unless @$moves;
-    my @c    = ($bx, @$moves);              # box occupies c[0]=bx, then c[1..k]
-    my %need = map(($_, 1), @$moves);       # the box moves INTO c[1..k]
-    my $s1   = $Cm{ $c[0] }{ $c[1] };       # stance for the first push
+    my @c    = ($bx, @$moves);           # box occupies c[0]=bx, then c[1..k]
+    my %need = map(($_, 1), @$moves);    # the box moves INTO c[1..k]
+    my $s1   = $Cm{ $c[0] }{ $c[1] };    # stance for the first push
     $need{$s1} = 1 if defined $s1;
-    my $player = $c[0];                     # after push 1 the player stands on c[0]
-    for (my $i = 2; $i < @c; ++$i) {         # push i moves the box c[i-1] -> c[i]
+    my $player = $c[0];                  # after push 1 the player stands on c[0]
+    for (my $i = 2; $i < @c; ++$i) {     # push i moves the box c[i-1] -> c[i]
         my $stance = $Cm{ $c[$i - 1] }{ $c[$i] };
         next unless defined $stance;
         $need{$_} = 1 foreach _walk_cells($player, $stance, $c[$i - 1]);
         $player = $c[$i - 1];
     }
     return \%need;
-}
+} ## end sub _macro_cells
 
 # Canonical Route: for EVERY push-graph key X and EVERY goal g, the ideal single-box
 # route (empty field, one box on X). The transient %Route (consumed by
@@ -1007,16 +988,15 @@ sub route() {
             }
             shift @moves;
             my $rec = {
-                'distance'   => $bestlen,             # player-move length (walk+push)
-                'steps'      => scalar @moves,        # box-push count
+                'distance'   => $bestlen,                     # player-move length (walk+push)
+                'steps'      => scalar @moves,                # box-push count
                 'moves'      => [@moves],
                 'must_empty' => _macro_cells($bx, \@moves),
             };
-            $Route{$bx}{$g} = $rec;
-            $routes{$bx}{$g} =
-                [pack('n*', @moves), pack('n*', sort {$a <=> $b} keys %{ $rec->{'must_empty'} })]
-                if @moves;                            # persist reachable only, compact
-        }
+            $Route{$bx}{$g}  = $rec;
+            $routes{$bx}{$g} = [pack('n*', @moves), pack('n*', sort {$a <=> $b} keys %{ $rec->{'must_empty'} })]
+                if @moves;                                    # persist reachable only, compact
+        } ## end foreach my $g (@Goal)
     } ## end foreach my $bx (keys %Cmk)
     $Game{'routes'} = \%routes;
 } ## end sub route
@@ -1042,7 +1022,6 @@ sub _quad($raw) {
     }
     return (\%quad, $maxp, $maxval);
 } ## end sub _quad
-
 
 sub podklady() {
     my (%draw, %zraw, %rmark);
@@ -1085,7 +1064,6 @@ sub podklady() {
     $Game{'maxval_steps'}  = $zmaxval;
 } ## end sub podklady
 
-
 sub common_path() {
     my (%count, %routes, $nvalid);
     $nvalid = 0;
@@ -1111,7 +1089,7 @@ sub common_path() {
             # an edge LANDING on a goal is never part of the conveyor -- the
             # c_path endpoint must sit OFF the goals, otherwise to_goal()'s
             # deliveries start from an occupied goal and mostly fail.
-            next if $Goal{$t};
+            next                   if $Goal{$t};
             $candidate{$s}{$t} = 1 if $count{$s}{$t} == $nvalid;
         }
     }
@@ -1178,7 +1156,7 @@ sub _reach($man, $box, $blk) {
 # cells in @$blocked occupied by standing boxes (walls). Returns the box-push
 # sequence [[box_src,box_tgt],...] or () if unreachable.
 sub _route_to_goal($man, $box, $g, $blocked) {
-    my %blk = map(($_, 1), @$blocked);
+    my %blk   = map(($_, 1), @$blocked);
     my $start = "$man,$box";
     my (%seen, %parent);
     $seen{$start}   = 0;
@@ -1204,14 +1182,14 @@ sub _route_to_goal($man, $box, $g, $blocked) {
             next if exists $seen{$child} && $seen{$child} <= $sollen;
             $seen{$child}   = $sollen;
             $parent{$child} = $pozice;
-            if ($t == $g) { $bestlen = $sollen; $best = $child; next; }
+            if ($t == $g) {$bestlen = $sollen; $best = $child; next;}
             push @heap, $child;
-        }
-    }
+        } ## end foreach my $t (@{ $Cmk{$bx}...})
+    } ## end while (@heap)
     return () unless defined $best;
     my @chain = ($best);
     my $p     = $best;
-    while ($p = $parent{$p}) { unshift @chain, $p; }
+    while ($p = $parent{$p}) {unshift @chain, $p;}
     shift @chain;    # drop the start state (carries no push)
     my @seq;
     foreach my $st (@chain) {
@@ -1219,7 +1197,7 @@ sub _route_to_goal($man, $box, $g, $blocked) {
         push @seq, [$src, $tgt];
     }
     return @seq;
-}
+} ## end sub _route_to_goal
 
 # When the game has a common path, precompute the delivery macros from the conveyor
 # ENDPOINT (c_path[-1]) to each goal -- routed in goal-fill order (highest %Order
@@ -1232,7 +1210,7 @@ sub to_goal() {
     my $cpath = $Game{'c_path'};
     return unless $cpath && @$cpath;
     my ($man, $box) = @{ $cpath->[-1] };
-    my @ng = sort { ($Order{$b} // 0) <=> ($Order{$a} // 0) } @Goal;
+    my @ng = sort {($Order{$b} // 0) <=> ($Order{$a} // 0)} @Goal;
     my (@blocked, %tg);
     foreach my $g (@ng) {
         my @seq = _route_to_goal($man, $box, $g, \@blocked);
@@ -1242,7 +1220,6 @@ sub to_goal() {
     }
     $Game{'to_goal'} = dclone \%tg if %tg and keys %tg == scalar @Goal;
 } ## end sub to_goal
-
 
 sub packing() {
 
@@ -1255,7 +1232,6 @@ sub packing() {
     my $count = length($Game{'code'} =~ tr/,//dr);
     @Game{ 'vzp', 'vzu' } = $count < 256 ? ('C*', 'CC*') : ('n*', 'nn*');
 }
-
 
 # THE ONE PASS. $code is the record Code::prepare returned (copied, not
 # touched); the options:
@@ -1277,11 +1253,10 @@ sub parse($code, %opt) {
     my $deadline = (defined $budget and $budget > 0) ? Time::HiRes::time() + $budget : undef;
     my $report   = $opt{'report'};
     my $t0       = Time::HiRes::time();
-
     %Game = %{ dclone($code) };
     initvars();
     delete $Game{'md5'};
-    %Vyp = vypocet();          # ONCE, shared by patterns() and bloky()
+    %Vyp = vypocet();    # ONCE, shared by patterns() and bloky()
 
     # --- push graph + patterns ---
     cm();                          # build Cm/Cmk + prune
@@ -1299,7 +1274,6 @@ sub parse($code, %opt) {
     packing();                     # sets vzp/vzu; MUST precede sols() (sols packs via vzp)
     sols();                        # the plain real terminals -- MUST precede priority()
     priority();                    # order + optional P1 preference; may ADD box-on-P terminals to sols
-
     ($Game{'code'} =~ tr/,//dr) =~ /[568]/;
     $Game{'player'} = $-[0];
     $Game{'h'}      = 1 + ($Game{'code'} =~ tr/,//);
@@ -1323,11 +1297,12 @@ sub parse($code, %opt) {
     # Sokoban project's collection has no such level (the Code stage reduced
     # every level and its games were all meant to be solved); a level typed by
     # a user may be one, so it is refused here with the cell named.
-    my %home = map { ($_, 1) } @Baggage;
+    my %home = map {($_, 1)} @Baggage;
     for my $g (@Goal) {
         next if $home{$g};
-        next if grep { exists $Game{'routes'}{$_}{$g} } keys %{ $Game{'routes'} };
-        Carp::croak("REFUSED: no box can ever be pushed onto the goal at cell $g (row " . int($g / $W) . ", column " . ($g % $W) . ')');
+        next if grep {exists $Game{'routes'}{$_}{$g}} keys %{ $Game{'routes'} };
+        Carp::croak(
+            "REFUSED: no box can ever be pushed onto the goal at cell $g (row " . int($g / $W) . ", column " . ($g % $W) . ')');
     }
     podklady();
     common_path();
@@ -1346,9 +1321,7 @@ sub parse($code, %opt) {
 sub blob ($game) {
     return Compress::Zlib::compress(Storable::nfreeze($game));
 }
-
 1;
-
 __END__
 
 =head1 NAME

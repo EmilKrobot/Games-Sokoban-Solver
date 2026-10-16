@@ -17,13 +17,10 @@ package Games::Sokoban::Solver::Memory;
 # `use warnings FATAL => 'uninitialized'`.
 #
 # Lineage: Handy::memory_usage of the Sokoban project (2026-08-27).
-
 use v5.42;
 use Exporter 'import';
-
 our @EXPORT_OK = ('used_gb', 'total_gb', 'scope');
 our $VERSION   = '0.01';
-
 my $GIB = 1073741824;
 my $Scope;    # 'system' once a probe has worked, 'none' when none does (announced once)
 my $Read;     # the probe: returns (total, available) in bytes, or () when it failed
@@ -48,7 +45,7 @@ sub _probe () {
                 return ($total, $avail);
             };
         }
-    }
+    } ## end if ($^O eq 'MSWin32')
     elsif (-r '/proc/meminfo') {
         $Read = sub {
             open my $fh, '<', '/proc/meminfo' or return ();
@@ -70,7 +67,7 @@ sub _probe () {
         warn "Games::Sokoban::Solver::Memory: no way to read the machine's memory here -- the memory net is off\n";
     }
     return $Read;
-}
+} ## end sub _probe
 
 # GiB of the machine's memory in use, three decimals; 0 when it cannot be read.
 sub used_gb () {
@@ -91,9 +88,7 @@ sub scope () {
     _probe();
     return $Scope;
 }
-
 1;
-
 __END__
 
 =head1 NAME

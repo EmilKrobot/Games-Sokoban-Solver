@@ -9,37 +9,37 @@ package Games::Sokoban::Solver::Config;
 # name may contain), and written with the meaning and the default of every key
 # beside it, so that the file is its own documentation. The defaults are the
 # author's panel: they are numbers in this file, changed by editing them.
-
 use v5.42;
 use warnings FATAL => 'uninitialized';
-use Carp ();
-use File::Path ();
+use Carp                           ();
+use File::Path                     ();
 use Games::Sokoban::Solver::Memory ();
-
 our $VERSION = '0.01';
-
 my $NAME = 'soko-solver';
 
 # EVERY KEY, in the order of the file: its default (a value or a code that
 # finds one on this machine), its check, and what it means.
 my @KEYS = (
-    ['jobs',           \&_jobs_default, 'int1',   'worker threads the race may take (1 = one task at a time, no threads)'],
-    ['time',           60,              'secs',   'seconds for one mode of the race on a level (ORDER always has 30)'],
-    ['optimal',        60,              'secs0',  'seconds for the proof of the shortest solution (0 = do not look for it)'],
-    ['optimal_mode',   'DIAL',          'omode',  'the regime of the proof: DIAL, ASTAR or FIFO'],
-    ['fest_budget',    120,             'secs',   'seconds for the Festival analysis of a level (two of its parts stop when it is spent)'],
-    ['blok_budget',    30,              'budget', 'seconds for the deadlock patterns of a level (0 = none, -1 = complete; calibrated: 30 recovers 57-99 % of them)'],
-    ['maxgb',          0,               'gb0',    'stop a search when the whole machine uses more than this many GB of memory (0 = no ceiling)'],
-    ['berkeley',       \&_berkeley_default, 'bool', 'keep the search of long runs on disk through BerkeleyDB (1) or in memory (0)'],
-    ['berkeley_root',  \&_root_default, 'dir',    'where the BerkeleyDB stores live'],
-    ['berkeley_cache', 0.5,             'cache',  'memory pool of one store in GB, at most 3'],
-    ['berkeley_from',  600,             'secs0',  'from which limit in seconds a mode goes to disk (0 = always)'],
-    ['pull',           1,               'int1',   'pull searches (BACKWARD, FIRSTBACK) in flight at once'],
-    ['forward',        3,               'int1',   'forward modes of Firstbet in flight at once'],
-    ['hold',           0,               'gb0',    'no counted mode starts while the machine uses more than this many GB (0 = off)'],
-    ['format',         'path',          'format', 'what is printed for a level: path, sok, report or json'],
+    ['jobs',         \&_jobs_default, 'int1',  'worker threads the race may take (1 = one task at a time, no threads)'],
+    ['time',         60,              'secs',  'seconds for one mode of the race on a level (ORDER always has 30)'],
+    ['optimal',      60,              'secs0', 'seconds for the proof of the shortest solution (0 = do not look for it)'],
+    ['optimal_mode', 'DIAL',          'omode', 'the regime of the proof: DIAL, ASTAR or FIFO'],
+    ['fest_budget',  120, 'secs', 'seconds for the Festival analysis of a level (two of its parts stop when it is spent)'],
+    [
+        'blok_budget', 30, 'budget',
+        'seconds for the deadlock patterns of a level (0 = none, -1 = complete; calibrated: 30 recovers 57-99 % of them)'
+    ],
+    ['maxgb',    0, 'gb0', 'stop a search when the whole machine uses more than this many GB of memory (0 = no ceiling)'],
+    ['berkeley', \&_berkeley_default,   'bool',  'keep the search of long runs on disk through BerkeleyDB (1) or in memory (0)'],
+    ['berkeley_root',  \&_root_default, 'dir',   'where the BerkeleyDB stores live'],
+    ['berkeley_cache', 0.5,             'cache', 'memory pool of one store in GB, at most 3'],
+    ['berkeley_from',  600,             'secs0', 'from which limit in seconds a mode goes to disk (0 = always)'],
+    ['pull',           1,               'int1',  'pull searches (BACKWARD, FIRSTBACK) in flight at once'],
+    ['forward',        3,               'int1',  'forward modes of Firstbet in flight at once'],
+    ['hold',           0,      'gb0',    'no counted mode starts while the machine uses more than this many GB (0 = off)'],
+    ['format',         'path', 'format', 'what is printed for a level: path, sok, report or json'],
 );
-my %KEY = map { $_->[0] => $_ } @KEYS;
+my %KEY = map {$_->[0] => $_} @KEYS;
 
 # The questions of the first run, in order; a key not here is in the file with
 # its default and is changed by editing it.
@@ -57,7 +57,7 @@ my @ASK = (
 sub _processors () {
     return $ENV{'NUMBER_OF_PROCESSORS'} if ($ENV{'NUMBER_OF_PROCESSORS'} // '') =~ /\A\d+\z/;
     if (open my $fh, '<', '/proc/cpuinfo') {
-        my $n = grep { /^processor\s*:/ } <$fh>;
+        my $n = grep {/^processor\s*:/} <$fh>;
         close $fh;
         return $n if $n;
     }
@@ -72,10 +72,8 @@ sub _jobs_default () {
     my $n = _processors() - 1;
     return $n < 1 ? 1 : $n > 8 ? 8 : $n;
 }
-
-sub _berkeley_default () { return eval { require BerkeleyDB; 1 } ? 1 : 0 }
-
-sub _root_default () { return dir() . '/berkeley' }
+sub _berkeley_default () {return eval {require BerkeleyDB; 1} ? 1 : 0}
+sub _root_default ()     {return dir() . '/berkeley'}
 
 =head1 NAME
 
@@ -93,6 +91,16 @@ Games::Sokoban::Solver::Config - the settings of soko-solver: defaults, the ini 
     my %set   = Games::Sokoban::Solver::Config::load($ini);    # what the file says
     my @wrong = Games::Sokoban::Solver::Config::check(\%cfg);
 
+=head1 DESCRIPTION
+
+The settings of C<soko-solver.pl> in one place: what each one means, its
+default, where the ini file lives, how the file is read and written, the
+questions of the first run, and the three layers -- the defaults under the
+file under the command line. The file is plain C<key = value> lines with C<;>
+or C<#> comments, written with the meaning and the default of every key beside
+it, so that it is its own documentation. The defaults are the author's panel:
+numbers in this module, changed by editing them.
+
 =head1 FUNCTIONS
 
 =head2 names, describe
@@ -101,8 +109,8 @@ The keys in the order of the file, and the one-line meaning of a key.
 
 =cut
 
-sub names () { return map { $_->[0] } @KEYS }
-sub describe ($key) { return ($KEY{$key} // Carp::croak("Config: no setting '$key'"))->[3] }
+sub names ()        {return map {$_->[0]} @KEYS}
+sub describe ($key) {return ($KEY{$key} // Carp::croak("Config: no setting '$key'"))->[3]}
 
 =head2 defaults
 
@@ -116,7 +124,7 @@ directory of the ini file).
 =cut
 
 sub defaults () {
-    return map { $_->[0] => (ref $_->[1] eq 'CODE' ? $_->[1]->() : $_->[1]) } @KEYS;
+    return map {$_->[0] => (ref $_->[1] eq 'CODE' ? $_->[1]->() : $_->[1])} @KEYS;
 }
 
 =head2 dir, path
@@ -133,18 +141,17 @@ both.
 sub dir () {
     my $dir = $ENV{'SOKO_SOLVER_HOME'};
     unless (defined $dir and length $dir) {
-        if ($^O eq 'MSWin32') { $dir = ($ENV{'APPDATA'} // $ENV{'USERPROFILE'} // '.') . "/$NAME" }
+        if ($^O eq 'MSWin32') {$dir = ($ENV{'APPDATA'} // $ENV{'USERPROFILE'} // '.') . "/$NAME"}
         else {
             my $base = $ENV{'XDG_CONFIG_HOME'};
             $base = ($ENV{'HOME'} // '.') . '/.config' unless defined $base and length $base;
-            $dir = "$base/$NAME";
+            $dir  = "$base/$NAME";
         }
     }
     $dir =~ tr{\\}{/};
     return $dir;
 }
-
-sub path () { return dir() . "/$NAME.ini" }
+sub path () {return dir() . "/$NAME.ini"}
 
 =head2 load
 
@@ -167,7 +174,7 @@ sub load ($file) {
         if ($line =~ /^\s*([A-Za-z_]\w*)\s*=\s*(.*?)\s*\z/) {
             my ($key, $value) = ($1, $2);
             Carp::croak("Config: $file line $.: no setting '$key'") unless $KEY{$key};
-            $value =~ s/\A"(.*)"\z/$1/;    # a value may be quoted
+            $value =~ s/\A"(.*)"\z/$1/;            # a value may be quoted
             $cfg{$key} = $value;
             next;
         }
@@ -175,7 +182,7 @@ sub load ($file) {
     }
     close $fh;
     return %cfg;
-}
+} ## end sub load
 
 =head2 save
 
@@ -201,7 +208,7 @@ sub save ($file, $cfg) {
     }
     close($fh) or Carp::croak("Config: cannot write $file: $!");
     return;
-}
+} ## end sub save
 
 =head2 check
 
@@ -216,19 +223,18 @@ and 3; C<maxgb> and C<hold> non-negative. Returns the problems as sentences.
 =cut
 
 my %CHECK = (
-    'int1'   => sub ($v) { $v =~ /\A\d+\z/ && $v >= 1 ? undef : 'a whole number of at least 1' },
-    'secs'   => sub ($v) { _num($v) && $v > 0 ? undef : 'a number of seconds above 0' },
-    'secs0'  => sub ($v) { _num($v) && $v >= 0 ? undef : 'a number of seconds (0 for none)' },
-    'budget' => sub ($v) { _num($v) && $v >= -1 ? undef : 'a number of seconds (0 for none, -1 for the complete table)' },
-    'gb0'    => sub ($v) { _num($v) && $v >= 0 ? undef : 'a number of GB (0 for none)' },
-    'bool'   => sub ($v) { $v eq '0' || $v eq '1' ? undef : '0 or 1' },
-    'dir'    => sub ($v) { length $v ? undef : 'a directory' },
-    'cache'  => sub ($v) { _num($v) && $v >= 0.001 && $v <= 3 ? undef : 'a pool in GB between 0.001 and 3' },
-    'omode'  => sub ($v) { $v =~ /\A(?:DIAL|ASTAR|FIFO)\z/ ? undef : 'DIAL, ASTAR or FIFO' },
-    'format' => sub ($v) { $v =~ /\A(?:path|sok|report|json)\z/ ? undef : 'path, sok, report or json' },
+    'int1'   => sub ($v) {$v =~ /\A\d+\z/ && $v >= 1 ? undef : 'a whole number of at least 1'},
+    'secs'   => sub ($v) {_num($v) && $v > 0         ? undef : 'a number of seconds above 0'},
+    'secs0'  => sub ($v) {_num($v) && $v >= 0        ? undef : 'a number of seconds (0 for none)'},
+    'budget' => sub ($v) {_num($v) && $v >= -1       ? undef : 'a number of seconds (0 for none, -1 for the complete table)'},
+    'gb0'    => sub ($v) {_num($v) && $v >= 0        ? undef : 'a number of GB (0 for none)'},
+    'bool'   => sub ($v) {$v eq '0' || $v eq '1'     ? undef : '0 or 1'},
+    'dir'    => sub ($v) {length $v                  ? undef : 'a directory'},
+    'cache'  => sub ($v) {_num($v) && $v >= 0.001 && $v <= 3   ? undef : 'a pool in GB between 0.001 and 3'},
+    'omode'  => sub ($v) {$v =~ /\A(?:DIAL|ASTAR|FIFO)\z/      ? undef : 'DIAL, ASTAR or FIFO'},
+    'format' => sub ($v) {$v =~ /\A(?:path|sok|report|json)\z/ ? undef : 'path, sok, report or json'},
 );
-
-sub _num ($v) { return $v =~ /\A-?(?:\d+\.?\d*|\.\d+)\z/ ? 1 : 0 }
+sub _num ($v) {return $v =~ /\A-?(?:\d+\.?\d*|\.\d+)\z/ ? 1 : 0}
 
 sub check ($cfg) {
     my @problems;
@@ -239,7 +245,7 @@ sub check ($cfg) {
         my $wrong = $CHECK{$kind}->($v);
         push @problems, "$key = '$v' is not $wrong" if defined $wrong;
     }
-    push @problems, "unknown setting '$_'" for grep { !$KEY{$_} } sort keys %$cfg;
+    push @problems, "unknown setting '$_'" for grep {!$KEY{$_}} sort keys %$cfg;
     return @problems;
 }
 
@@ -255,7 +261,7 @@ a wrong value dies naming it.
 =cut
 
 sub resolve ($cli, %opt) {
-    my %cfg = defaults();
+    my %cfg  = defaults();
     my $file = $opt{'ini'} // path();
     if (!$opt{'no_ini'} and -f $file) {
         my %from = load($file);
@@ -268,7 +274,7 @@ sub resolve ($cli, %opt) {
     my @wrong = check(\%cfg);
     Carp::croak('Config: ' . join('; ', @wrong)) if @wrong;
     return %cfg;
-}
+} ## end sub resolve
 
 =head2 ask
 
@@ -301,17 +307,15 @@ sub ask ($cfg, $in, $out) {
             $line =~ s/\A\s+|\s+\z//g;
             my $value = length $line ? $line : $offer;
             my $wrong = $CHECK{ $KEY{$key}[2] }->($value);
-            unless (defined $wrong) { $cfg->{$key} = $value; last }
+            unless (defined $wrong) {$cfg->{$key} = $value; last}
             print {$out} "  '$value' is not $wrong\n";
             last unless length $line;    # the offer itself cannot be wrong twice: keep what is there
         }
         last if $key eq 'berkeley' and !$cfg->{'berkeley'} and @ASK;    # no stores: the three store questions are moot
-    }
+    } ## end for my $q (@ASK)
     return $cfg;
-}
-
+} ## end sub ask
 1;
-
 __END__
 
 =head1 AUTHOR

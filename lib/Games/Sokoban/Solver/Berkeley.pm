@@ -33,14 +33,12 @@ package Games::Sokoban::Solver::Berkeley;
 # the BerkeleyDB module itself is a recommendation of the distribution, not a
 # prerequisite. Lineage: Games::Berkeley of the Sokoban project, less the
 # shared-environment family that project had stopped using.
-
 use v5.42;
 use BerkeleyDB;
-use Carp     qw(confess);
+use Carp qw(confess);
 use warnings FATAL => 'uninitialized';
-use File::Path ();                           # make_path and remove_tree, always qualified
-use Fcntl      ('LOCK_EX', 'LOCK_NB');       # the per-directory locks
-
+use File::Path ();                   # make_path and remove_tree, always qualified
+use Fcntl ('LOCK_EX', 'LOCK_NB');    # the per-directory locks
 our $VERSION = '0.01';
 
 # THE ROOT: the directory every store hangs off, set by the caller before the
@@ -51,7 +49,7 @@ our $ROOT;
 
 sub berk_root() {
     my $root = $ROOT // $ENV{'SOKOBAN_BERK_ROOT'};
-    confess('Berkeley: no root directory for the stores -- set $Games::Sokoban::Solver::Berkeley::ROOT'
+    confess(  'Berkeley: no root directory for the stores -- set $Games::Sokoban::Solver::Berkeley::ROOT'
             . ' (or SOKOBAN_BERK_ROOT in the environment)')
         unless defined $root and length $root;
     $root =~ tr{\\}{/};
@@ -71,15 +69,17 @@ sub berk_root() {
 #     which one and what the operating system said about it.
 sub make_dir ($dir) {
     return if -d $dir;
-    File::Path::make_path($dir, {'error' => \my $err});
+    File::Path::make_path($dir, { 'error' => \my $err });
     return if -d $dir;    # a lost race is not a failure: somebody else made it
-    # die, not confess: the caller chain here is solve(), whose arguments are a
-    # compressed blob, and a backtrace through it buries the one line that says
-    # which directory and why.
+                          # die, not confess: the caller chain here is solve(), whose arguments are a
+                          # compressed blob, and a backtrace through it buries the one line that says
+                          # which directory and why.
     die "cannot create directory $dir -- "
-        . (($err && @$err)
+        . (
+            ($err && @$err)
             ? join('; ', map {my ($f, $m) = %$_; ($f eq q{} ? q{} : "$f: ") . $m} @$err)
-            : 'and the operating system gave no reason') . "\n";
+            : 'and the operating system gave no reason'
+          ) . "\n";
 }
 
 # THE POOL SIZE GOES IN THROUGH A FILE (2026-10-06). BerkeleyDB::Env->new takes
@@ -140,10 +140,12 @@ sub pool_config ($home, $bytes) {
 sub open_hash ($env, $file, $flags, $pairlen) {
     my $fill = int((4096 - 32) / ($pairlen + 8));
     return BerkeleyDB::Hash->new(
-        -Filename => $file, -Flags => $flags, -Env => $env,
-        -Pagesize => 4096, -Ffactor => ($fill > 1 ? $fill : 1),
-        )
-        // die "Cannot open $file: $BerkeleyDB::Error\n";
+        -Filename => $file,
+        -Flags    => $flags,
+        -Env      => $env,
+        -Pagesize => 4096,
+        -Ffactor  => ($fill > 1 ? $fill : 1),
+    ) // die "Cannot open $file: $BerkeleyDB::Error\n";
 }
 
 # The page size a store file was created with, read off its first page without
@@ -192,7 +194,6 @@ sub take_lock ($dir, $what) {
     return $lock;
 }
 
-
 # --- FirstbetBerk per-game env -----------------------------------------------
 # Each game gets its OWN env + home dir (<berk_root>/FirstbetBerk/G<id>) so a very
 # long single-game run never overloads or contends the shared Bad env that baseline
@@ -210,11 +211,11 @@ sub take_lock ($dir, $what) {
 # will actually let the files go.
 my $FbHome;    # <root>/Firstbet, read off the root at every init and sweep
 my ($FbEnv, $FbDir, $FbLock, $FbBad, $FbTahy, $FbPozice);
+
 # BACKWARD scratch env -- separate dir (G<id>b) so it never collides with the forward
 # env's persistent Bad/Tahy files; pure trajectory-scratch (a re-run explores a
 # different beam), so it is truncated on open and the dir is removed by the sweep.
 my ($FbBwdEnv, $FbBwdDir, $FbBseen);
-
 
 # Opens the game's env with all three DBs. Bad + Tahy are the PERSISTENT pair (DB_CREATE
 # reuses a kept dir across a TIMEOUT retry). Pozice (Seen/Parent) is TRAJECTORY-scratch
@@ -240,8 +241,10 @@ sub fb_init ($gameid, $cachesize = 536870912, $tag = q{}) {    # 512 MB default 
     # alone counts too -- a close that died half way leaves exactly that.
     fb_close() if defined $FbEnv or defined $FbBad or defined $FbTahy or defined $FbPozice;
     $FbHome = berk_root() . '/Firstbet';
-    $FbDir  = $tag eq q{} ? sprintf('%s/G%d', $FbHome, $gameid)
-                          : sprintf('%s/G%d_%s', $FbHome, $gameid, $tag);
+    $FbDir =
+        $tag eq q{}
+        ? sprintf('%s/G%d', $FbHome, $gameid)
+        : sprintf('%s/G%d_%s', $FbHome, $gameid, $tag);
     make_dir($FbDir);
     $FbLock = take_lock($FbDir, 'fb_init');
     my $pz = "$FbDir/pozice.brk";
@@ -260,8 +263,7 @@ sub fb_init ($gameid, $cachesize = 536870912, $tag = q{}) {    # 512 MB default 
         )
         or die "Cannot open FirstbetBerk env for game $gameid ($FbDir): $BerkeleyDB::Error\n";
     return;
-}
-
+} ## end sub fb_init
 
 # THE THREE STORES OPEN AT THE FIRST TOUCH (2026-10-06), because that is the
 # first moment the length of a position is known -- fb_init is called before the
@@ -275,12 +277,11 @@ sub fb_init ($gameid, $cachesize = 536870912, $tag = q{}) {    # 512 MB default 
 # previous search's positions would otherwise be this one's seen-set.
 sub fb_open ($keylen) {
     confess("a FirstbetBerk store was touched with no environment open\n") unless defined $FbEnv;
-    $FbBad    = open_hash($FbEnv, 'bad.brk',    DB_CREATE, $keylen + 1);
-    $FbTahy   = open_hash($FbEnv, 'tahy.brk',   DB_CREATE, 4 * $keylen);
+    $FbBad    = open_hash($FbEnv, 'bad.brk',    DB_CREATE,               $keylen + 1);
+    $FbTahy   = open_hash($FbEnv, 'tahy.brk',   DB_CREATE,               4 * $keylen);
     $FbPozice = open_hash($FbEnv, 'pozice.brk', DB_CREATE | DB_TRUNCATE, 2 * $keylen);
     return;
 }
-
 
 # CLOSING IS ALL IT DOES. It used to delete as well -- the whole directory when
 # the game was solved, pozice.brk otherwise -- and inside a worker thread that
@@ -318,11 +319,14 @@ sub fb_close () {
     }
     my $dir = $FbDir;
     $FbDir = undef;
-    warn 'FirstbetBerk: the stores in ' . ($dir // '(no directory)') . ' did not close cleanly (' . join('; ', @failed)
+    warn 'FirstbetBerk: the stores in '
+        . ($dir // '(no directory)')
+        . ' did not close cleanly ('
+        . join('; ', @failed)
         . ") -- what is kept there may be incomplete\n"
         if @failed;
     return;
-}
+} ## end sub fb_close
 
 # Main-thread disk sweep for the THREADED drivers (2026-08-06). In ithreads a
 # worker's BerkeleyDB files stay OS-locked despite db_close/env-close until the
@@ -356,13 +360,12 @@ sub fb_sweep ($games, $solved = []) {
         next unless $g =~ /\A\d+\z/a;
         File::Path::remove_tree("$FbHome/G${g}b") if -d "$FbHome/G${g}b";
         for my $d (grep {-d} glob("$FbHome/G$g $FbHome/G${g}_*")) {
-            if   ($sg{$g}) { File::Path::remove_tree($d) }
-            else           { unlink "$d/pozice.brk" }
+            if   ($sg{$g}) {File::Path::remove_tree($d)}
+            else           {unlink "$d/pozice.brk"}
         }
     }
     return;
-} ## end sub fb_sweep
-
+}
 
 # fb_purge_forward WAS HERE AND IS GONE (2026-09-09). It removed the forward dir
 # G<id> when a game was solved by a mode that never opens it (BACKWARD/ORDER),
@@ -374,14 +377,11 @@ sub fb_sweep ($games, $solved = []) {
 # another, and exactly the 2026-08-18 failure once they race, since it would
 # unmap the env of a mode still searching. The engine no longer deletes
 # anything but its own; the drivers sweep after the join.
-
-
 sub fb_setbad ($pozice) {
     fb_open(length $pozice) unless defined $FbPozice;
     $FbBad->db_put($pozice, 1) and fb_fail('bad.brk', $FbDir);
     return;
 }
-
 
 sub fb_isbad ($pozice) {
     fb_open(length $pozice) unless defined $FbPozice;
@@ -390,7 +390,6 @@ sub fb_isbad ($pozice) {
     return 0 if $status == $NotFound;
     fb_fail('bad.brk', $FbDir);
 }
-
 
 # Positions are fixed-length within a game, so children pack as concatenated
 # a-strings (no Storable). L is read per call from the key length -- NOT a state var
@@ -401,7 +400,6 @@ sub fb_tahy_set ($pozice, $kids) {
     $FbTahy->db_put($pozice, pack("(a$L)*", @$kids)) and fb_fail('tahy.brk', $FbDir);
     return;
 }
-
 
 sub fb_tahy_get ($pozice) {
     fb_open(length $pozice) unless defined $FbPozice;
@@ -414,14 +412,12 @@ sub fb_tahy_get ($pozice) {
     return [unpack("(a$L)*", $value)];
 }
 
-
 sub fb_tahy_del ($pozice) {
     fb_open(length $pozice) unless defined $FbPozice;
     my $status = $FbTahy->db_del($pozice);
     fb_fail('tahy.brk', $FbDir) if $status and $status != $NotFound;
     return;
 }
-
 
 # Seen + Parent combined in one Pozice record: the value IS the parent position (a
 # fixed-length string, or '' for Start), so existence = Seen and the value = Parent.
@@ -432,7 +428,6 @@ sub fb_pos_set ($pozice, $parent) {
     return;
 }
 
-
 sub fb_pos_present ($pozice) {
     fb_open(length $pozice) unless defined $FbPozice;
     my $status = $FbPozice->db_get($pozice, my $value);
@@ -440,7 +435,6 @@ sub fb_pos_present ($pozice) {
     return 0 if $status == $NotFound;
     fb_fail('pozice.brk', $FbDir);
 }
-
 
 sub fb_pos_parent ($pozice) {
     fb_open(length $pozice) unless defined $FbPozice;
@@ -450,14 +444,12 @@ sub fb_pos_parent ($pozice) {
     fb_fail('pozice.brk', $FbDir);
 }
 
-
 sub fb_pos_del ($pozice) {
     fb_open(length $pozice) unless defined $FbPozice;
     my $status = $FbPozice->db_del($pozice);
     fb_fail('pozice.brk', $FbDir) if $status and $status != $NotFound;
     return;
 }
-
 
 # Live record count of the Pozice DB = the seen-set size (the disk analog of RAM's
 # scalar %Parent -- discover() adds a record, node_del() removes one). Exact stat (no
@@ -467,7 +459,6 @@ sub fb_pos_del ($pozice) {
 sub fb_pos_count () {
     return defined $FbPozice ? $FbPozice->db_stat->{hash_nkeys} : 0;
 }
-
 
 # --- BACKWARD scratch env (%Bseen, FirstbetBerk's pull search) ---------------
 # ONE store since Firstbet 3.5 (2026-09-05): the value of a key is the packed
@@ -495,7 +486,6 @@ sub fb_bwd_init ($gameid, $cachesize = 536870912) {
     return;
 }
 
-
 # THE STORE IS CLOSED DEAD (2026-10-07). Nothing ever reads bseen.brk again --
 # the next search truncates it and the sweep removes its directory -- so its
 # pages are not worth one write: db_close(DB_NOSYNC) leaves them where they are,
@@ -510,7 +500,9 @@ sub fb_bwd_close () {
         $FbBseen = undef;
         if (defined $FbBwdEnv) {
             my $again = BerkeleyDB::Hash->new(
-                -Filename => 'bseen.brk', -Flags => DB_CREATE | DB_TRUNCATE, -Env => $FbBwdEnv,
+                -Filename => 'bseen.brk',
+                -Flags    => DB_CREATE | DB_TRUNCATE,
+                -Env      => $FbBwdEnv,
             );
             $again->db_close(DB_NOSYNC) if defined $again;
         }
@@ -525,8 +517,7 @@ sub fb_bwd_close () {
     warn 'FirstbetBerk: the environment in ' . ($dir // '(no directory)') . " did not close cleanly ($failed)\n"
         if defined $failed;
     return;
-}
-
+} ## end sub fb_bwd_close
 
 # The value is the engine's own record -- pack('nn', from, to) . parent key, or
 # '' for a seed -- stored and returned as it is.
@@ -539,7 +530,6 @@ sub fb_bseen_set ($pozice, $value) {
     return;
 }
 
-
 # Before the first write there is no store, and nothing in it.
 sub fb_bseen_get ($pozice) {
     return undef unless defined $FbBseen;
@@ -549,7 +539,6 @@ sub fb_bseen_get ($pozice) {
     fb_fail('bseen.brk', $FbBwdDir);
 }
 
-
 sub fb_bseen_has ($pozice) {
     return 0 unless defined $FbBseen;
     my $status = $FbBseen->db_get($pozice, my $value);
@@ -557,7 +546,6 @@ sub fb_bseen_has ($pozice) {
     return 0 if $status == $NotFound;
     fb_fail('bseen.brk', $FbBwdDir);
 }
-
 
 # --- THE GAME'S OWN env: one directory per game, every store inside ----------
 # (2026-08-31, USER: "vsechny databaze do jednoho vlastniho adresare s vlastnim
@@ -616,24 +604,28 @@ my $GHome;    # <root>/Optimal, read off the root at every init
 my ($GEnv, $GDir, $GBad, $GTahy, $GPozice, $GBucket, $GBqCur, $GExpanded, $GLock);
 my $GBqSeq = 0;
 
-
 # Open one run-state store EMPTY, whatever the file held before: DB_TRUNCATE has
 # the filesystem cut the old file to zero (see the header for why this and not
 # truncate()). Called at open and at every reset; the caller closes the old
 # handle first.
 sub _g_run_open ($file, $btree = 0) {
-    my $db = $btree
+    my $db =
+        $btree
         ? BerkeleyDB::Btree->new(
-            -Filename => $file, -Flags => DB_CREATE | DB_TRUNCATE, -Env => $GEnv,
+            -Filename => $file,
+            -Flags    => DB_CREATE | DB_TRUNCATE,
+            -Env      => $GEnv,
             -Pagesize => 16384,
-            )
+        )
         : BerkeleyDB::Hash->new(
-            -Filename => $file, -Flags => DB_CREATE | DB_TRUNCATE, -Env => $GEnv,
-            -Pagesize => 16384, -Ffactor => 64,
-            );
+            -Filename => $file,
+            -Flags    => DB_CREATE | DB_TRUNCATE,
+            -Env      => $GEnv,
+            -Pagesize => 16384,
+            -Ffactor  => 64,
+        );
     return $db // die "Cannot open $file in $GDir: $BerkeleyDB::Error\n";
-}
-
+} ## end sub _g_run_open
 
 # Open this game's own env and attach its stores. $spill also opens the run
 # scratch, empty -- SolverBerk asks for it, the RAM solvers do not.
@@ -660,7 +652,7 @@ sub g_init ($gameid, $cachesize = 536870912, $spill = 0) {
     # open_hash) -- the move to pool_config belongs together with the page
     # sizes, measured. Until then a size the XS cannot carry is refused, and
     # before anything is created or locked.
-    confess("g_init: a pool of $cachesize bytes -- the optimal solver's stores take at most 3 GB"
+    confess(  "g_init: a pool of $cachesize bytes -- the optimal solver's stores take at most 3 GB"
             . " (the BerkeleyDB module keeps the size in 32 bits)\n")
         if $cachesize > 3 * 1073741824;
     $GHome = berk_root() . '/Optimal';
@@ -678,13 +670,19 @@ sub g_init ($gameid, $cachesize = 536870912, $spill = 0) {
         die "Cannot open env for game $gameid ($GDir): $BerkeleyDB::Error\n";
     }
     $GBad = BerkeleyDB::Hash->new(
-        -Filename => 'bad.brk', -Flags => DB_CREATE, -Env => $GEnv,
-        -Pagesize => 8192, -Ffactor => 128,
+        -Filename => 'bad.brk',
+        -Flags    => DB_CREATE,
+        -Env      => $GEnv,
+        -Pagesize => 8192,
+        -Ffactor  => 128,
         )
         or die "Cannot open Bad db for game $gameid: $BerkeleyDB::Error\n";
     $GTahy = BerkeleyDB::Hash->new(
-        -Filename => 'tahy.brk', -Flags => DB_CREATE, -Env => $GEnv,
-        -Pagesize => 32768, -Ffactor => 32,
+        -Filename => 'tahy.brk',
+        -Flags    => DB_CREATE,
+        -Env      => $GEnv,
+        -Pagesize => 32768,
+        -Ffactor  => 32,
         )
         or die "Cannot open Tahy db for game $gameid: $BerkeleyDB::Error\n";
     if ($spill) {
@@ -694,7 +692,7 @@ sub g_init ($gameid, $cachesize = 536870912, $spill = 0) {
         for my $stale ('heap.brk', 'inheap.brk') {
             unlink "$GDir/$stale" if -f "$GDir/$stale";
         }
-        $GPozice   = _g_run_open('pozice.brk');    # scratch: never inherit a prior run's Seen/Parent
+        $GPozice   = _g_run_open('pozice.brk');      # scratch: never inherit a prior run's Seen/Parent
         $GBucket   = _g_run_open('bucket.brk', 1);
         $GExpanded = _g_run_open('expanded.brk');
         $GBqCur    = $GBucket->db_cursor()
@@ -702,7 +700,6 @@ sub g_init ($gameid, $cachesize = 536870912, $spill = 0) {
         $GBqSeq = 0;
     }
 } ## end sub g_init
-
 
 # $delete is true only on SOLVED: the game is done, so the whole directory goes --
 # facts and scratch alike. On a TIMEOUT the FACTS stay for the next run, whichever
@@ -731,25 +728,22 @@ sub g_close ($delete = 0) {
         if ($delete) {
             File::Path::remove_tree($GDir);    # SOLVED -> reclaim disk (whole per-game dir)
         }
-        else {                    # the env is closed: a plain unlink is safe now
+        else {                                 # the env is closed: a plain unlink is safe now
             unlink "$GDir/$_" foreach grep {-f "$GDir/$_"} ('pozice.brk', 'bucket.brk', 'expanded.brk');
         }
     }
     $GDir = undef;
 } ## end sub g_close
 
-
 sub g_setbad ($pozice) {
     $GBad->db_put($pozice, 1);
     return;
 }
 
-
 sub g_isbad ($pozice) {
     my $value;
     return $GBad->db_get($pozice, $value) == 0 ? 1 : 0;
 }
-
 
 sub g_tahy_get ($pozice) {
     my $value;
@@ -758,19 +752,11 @@ sub g_tahy_get ($pozice) {
     return [unpack($unp, $value)];
 }
 
-
 sub g_tahy_set ($pozice, $tahy) {
     my $unp = sprintf('(a%dn)*', length $pozice);
     $GTahy->db_put($pozice, pack($unp, @$tahy));
     return;
 }
-
-
-sub g_tahy_del ($pozice) {
-    $GTahy->db_del($pozice);
-    return;
-}
-
 
 # Pozice = sol (16-bit) + parent position (a-string, '' for the root).
 sub g_pos_set ($pozice, $parent, $sol) {
@@ -778,12 +764,10 @@ sub g_pos_set ($pozice, $parent, $sol) {
     return;
 }
 
-
 sub g_pos_present ($pozice) {
     my $value;
     return $GPozice->db_get($pozice, $value) == 0 ? 1 : 0;
 }
-
 
 sub g_pos_getsol ($pozice) {
     my $value;
@@ -791,19 +775,11 @@ sub g_pos_getsol ($pozice) {
     return (unpack('na*', $value))[0];
 }
 
-
 sub g_pos_getparent ($pozice) {
     my $value;
     return undef if $GPozice->db_get($pozice, $value);
     return (unpack('na*', $value))[1];
 }
-
-
-sub g_pos_del ($pozice) {
-    $GPozice->db_del($pozice);
-    return;
-}
-
 
 # restart() drops all Seen/Parent -- throw the Pozice file away and open a new one.
 sub g_pos_reset () {
@@ -812,7 +788,6 @@ sub g_pos_reset () {
     return;
 }
 
-
 # Insert $pozice at cost $sol. No membership test: a duplicate of a relaxed
 # node is allowed (the caller skips the stale copy at pop time); the sequence
 # number keeps the key unique so nothing overwrites anything.
@@ -820,7 +795,6 @@ sub g_bq_add ($pozice, $sol) {
     $GBucket->db_put(pack('NN', $sol, ++$GBqSeq), $pozice);
     return;
 }
-
 
 # Take the cheapest waiting position: cursor to the FIRST key (BTree order =
 # numeric cost order), delete it, return (cost, position). Empty queue -> ().
@@ -831,13 +805,12 @@ sub g_bq_pop () {
     return ((unpack('NN', $key))[0], $value);
 }
 
-
 # Free everything queued at cost >= $bestlen after an improvement: nothing
 # there can ever be popped again. Returns how many records went, so the caller
 # can keep its open-list counter honest. Runs once per improvement.
 sub g_bq_trim ($bestlen) {
     my ($key, $value) = (pack('NN', $bestlen, 0), '');
-    my $n = 0;
+    my $n      = 0;
     my $status = $GBqCur->c_get($key, $value, DB_SET_RANGE);
     while ($status == 0) {
         $GBqCur->c_del();
@@ -846,7 +819,6 @@ sub g_bq_trim ($bestlen) {
     }
     return $n;
 }
-
 
 # The seed threader empties the open list -- throw Bucket+Expanded away and open
 # new ones. The cursor closes before its database and is reopened on the new one.
@@ -862,7 +834,6 @@ sub g_bq_reset () {
     return;
 }
 
-
 # Expanded membership: the disk shape of Solver.pm 2.0's low %Seen bit. A
 # separate DB rather than a flag inside the Pozice record, because setting a
 # flag there would be a read-modify-write of a variable-length record on every
@@ -872,15 +843,13 @@ sub g_exp_set ($pozice) {
     return;
 }
 
-
 sub g_exp_has ($pozice) {
     my $value;
     return $GExpanded->db_get($pozice, $value) == 0 ? 1 : 0;
 }
 
-
-# ...and its per-key delete, which every sibling store already had (g_pos_del,
-# g_tahy_del, fb_pos_del, fb_tahy_del) and this one lacked because the DIAL regime never
+# ...and its per-key delete, which the Firstbet twin's stores already had
+# (fb_pos_del, fb_tahy_del) and this one lacked because the DIAL regime never
 # clears the bit: a popped cost is final. Both other modes of the portfolio do clear it
 # (2026-09-02) -- ASTAR when a cheaper route RE-OPENS an expanded node, and FIFO at every
 # pop, where the same store carries the QUEUED bit instead of the expanded one. The
@@ -891,15 +860,12 @@ sub g_exp_del ($pozice) {
     return;
 }
 
-
 sub END {
-    fb_close()     if defined $FbEnv;    # DB_PRIVATE env: flush the .brk files, keep the dir
+    fb_close()     if defined $FbEnv;      # DB_PRIVATE env: flush the .brk files, keep the dir
     fb_bwd_close() if defined $FbBwdEnv;
-    g_close()      if defined $GEnv;     # the game's env: flush, keep the dir, drop the lock
+    g_close()      if defined $GEnv;       # the game's env: flush, keep the dir, drop the lock
 }
-
 1;
-
 __END__
 
 =head1 NAME

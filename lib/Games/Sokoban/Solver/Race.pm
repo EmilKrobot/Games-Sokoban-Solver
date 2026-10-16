@@ -38,14 +38,12 @@ package Games::Sokoban::Solver::Race;
 # there is none to refuse.)
 #
 # Lineage: Games::Sokoban::Race 0.03 of the Sokoban project.
-
 use v5.42;
 use warnings FATAL => 'uninitialized';
 no warnings 'once';
-use Carp ();
-use Config ();
+use Carp        ();
+use Config      ();
 use Time::HiRes ();    # next_timed: a wait that came back early has to be made up
-
 our $VERSION = '0.01';
 
 =head1 NAME
@@ -75,6 +73,24 @@ Games::Sokoban::Solver::Race - run several solver modes at one level and keep th
     }
     $race->join;
 
+=head1 DESCRIPTION
+
+A pool of workers for a race: several modes are set on the same level at the
+same time, the first to solve it wins and the others are told to stop. The
+pool knows nothing about levels, modes or engines; it hands tasks to workers
+and results back, and the one thing the workers share is the race signal.
+
+Two backends stand behind one interface. With more than one job on a perl
+with ithreads the workers are threads, loaded at C<start> and not before, so
+a perl without them compiles this module and a program that asks for one job
+never pays for the thread modules. Otherwise the same C<submit>, C<next> and
+C<join> run every task in this interpreter, one at a time, in the order
+submitted -- through the very code the worker runs, so the two backends cannot
+differ. A task is a solve by the engine named at construction, or a task of
+another kind given to the handler registered for it (the distribution deals a
+level's deadlock patterns out this way, to the pool that will race its modes:
+two pools in one process deadlock).
+
 =head1 THE RACE SIGNAL
 
 One shared hash, label to true. A worker that solves a level sets it; the
@@ -100,20 +116,21 @@ sub new ($class, %arg) {
         'winner'   => $arg{'winner'}   // 1,
         'handlers' => $arg{'handlers'} // {},
         'serial'   => $arg{'serial'}   // 0,
-        'threads'  => 0,          # 1 once start() has made threads
-        'queue'    => [],         # the serial backend's tasks
+        'threads'  => 0,       # 1 once start() has made threads
+        'queue'    => [],      # the serial backend's tasks
         'in'       => undef,
         'out'      => undef,
-        'live'     => 0,          # workers still running (threads) or 1 while the serial pool is open
+        'live'     => 0,       # workers still running (threads) or 1 while the serial pool is open
         'closed'   => 0,
         'solved'   => undef,
     };
     Carp::croak('Race: jobs must be at least 1') if $self->{'jobs'} < 1;
     Carp::croak('Race: handlers must be a hash of kind => code')
-        if ref $self->{'handlers'} ne 'HASH' or grep { ref $_ ne 'CODE' } values %{ $self->{'handlers'} };
+        if ref $self->{'handlers'} ne 'HASH'
+        or grep {ref $_ ne 'CODE'} values %{ $self->{'handlers'} };
     Carp::croak("Race: 'solve' is the kind of an ordinary task and cannot be a handler") if $self->{'handlers'}{'solve'};
     return bless $self, $class;
-}
+} ## end sub new
 
 =head2 start
 
@@ -128,18 +145,16 @@ engine is not loaded (the workers get only what is loaded now).
 
 sub start ($self) {
     Carp::croak('Race: already started') if $self->{'live'};
-
     my $engine = $self->{'engine'};
     Carp::croak("Race: engine $engine is not loaded, or has no solve() -- "
-        . 'load it BEFORE start(), the workers only get what is loaded now')
+            . 'load it BEFORE start(), the workers only get what is loaded now')
         unless $engine->can('solve');
-
     my $threaded = $self->{'jobs'} > 1 && !$self->{'serial'} && $Config::Config{'useithreads'};
     unless ($threaded) {
         my %solved;
         $self->{'solved'} = \%solved;
         $self->{'live'}   = 1;
-        $self->{'jobs'}   = 1;    # whatever was asked: one task at a time is what runs
+        $self->{'jobs'}   = 1;          # whatever was asked: one task at a time is what runs
         return $self;
     }
 
@@ -147,19 +162,17 @@ sub start ($self) {
     # share() a silent no-op, and the race signal would then be a private hash
     # in every worker -- every mode running its budget out on a solved level.
     Carp::croak('Race: threads::shared or Thread::Queue was loaded before threads -- '
-        . 'in that order share() does nothing and the race signal is lost')
+            . 'in that order share() does nothing and the race signal is lost')
         if (($INC{'threads/shared.pm'} or $INC{'Thread/Queue.pm'}) and !$INC{'threads.pm'});
     require threads;
     require threads::shared;
     require Thread::Queue;
-
     my %solved;
     threads::shared::share(\%solved);
     $self->{'solved'}  = \%solved;
     $self->{'in'}      = Thread::Queue->new;
     $self->{'out'}     = Thread::Queue->new;
     $self->{'threads'} = 1;
-
     my ($in, $out) = @{$self}{ 'in', 'out' };
     my $winner   = $self->{'winner'};
     my $handlers = $self->{'handlers'};
@@ -172,7 +185,6 @@ sub start ($self) {
         }
         $out->enqueue(['DONE']);
     };
-
     threads->create($worker) for 1 .. $self->{'jobs'};
 
     # A worker that was never made posts no DONE, and next() would then wait for
@@ -182,21 +194,19 @@ sub start ($self) {
         if $made < $self->{'jobs'};
     $self->{'live'} = $self->{'jobs'};
     return $self;
-}
+} ## end sub start
 
 # ONE TASK, RUN: the worker's body, and the serial backend's -- the same code,
 # so the two backends cannot differ. Returns the raw result rows (a list task
 # gives one per mode).
 sub _run ($engine, $handlers, $winner, $solved, $tid, $task) {
     my ($kind, $label, @rest) = @$task;
-
     if ($kind ne 'solve') {
         my $started = Time::HiRes::time();
-        my @r       = eval { $handlers->{$kind}->(@rest) };
+        my @r       = eval {$handlers->{$kind}->(@rest)};
         my $wall    = Time::HiRes::time() - $started;
         return (['TASK', $kind, $label, ($@ ? "$@" : q{}), $wall, $started, $tid, [@r]]);
     }
-
     my ($mode, $blob, $lim, $ctl) = @rest;
     my @rows;
     no strict 'refs';
@@ -213,7 +223,7 @@ sub _run ($engine, $handlers, $winner, $solved, $tid, $task) {
             next;
         }
         ${"${engine}::RACE_GID"} = $label;
-        ${"${engine}::CTL"}      = $ctl;    # what the caller tells the engine about THIS task (see Portfolio)
+        ${"${engine}::CTL"}      = $ctl;     # what the caller tells the engine about THIS task (see Portfolio)
 
         # THE WORKER'S OWN CLOCK around the call. The engines do not time the
         # same thing -- Firstbet and FirstBack start their clock after the level
@@ -235,20 +245,25 @@ sub _run ($engine, $handlers, $winner, $solved, $tid, $task) {
             push @rows, [$label, $m, 'DIE', q{}, 0, '0.000000', "$@", q{}, $wall, $started, $tid];
             next;
         }
-
         $path = q{} unless defined $path;
         if ($reason eq 'SOLVED' && length $path) {
             $solved->{$label} = 1 if $winner;    # tell the losers of THIS level to stop -- unless this is a matrix
         }
-        else { $path = q{} }
+        else {$path = q{}}
 
         # Why the engine stopped, when it cares to say ($LastFail: Festival and
         # Fest keep one, the other two do not).
-        push @rows, [$label, $m, $reason, $path, $nseen // 0, sprintf('%.6f', $cas // 0), q{},
-            ${"${engine}::LastFail"} // q{}, $wall, $started, $tid];
-    }
+        push @rows,
+            [
+                $label, $m, $reason, $path,
+                $nseen // 0,
+                sprintf('%.6f', $cas // 0),
+                q{},   ${"${engine}::LastFail"} // q{},
+                $wall, $started, $tid
+            ];
+    } ## end for my $m (ref $mode eq...)
     return @rows;
-}
+} ## end sub _run
 
 =head2 submit
 
@@ -289,8 +304,8 @@ sub submit_task ($self, $kind, $label, @payload) {
 sub _enqueue ($self, $task) {
     Carp::croak('Race: submit() before start()') unless $self->{'live'};
     Carp::croak('Race: submit() after close()') if $self->{'closed'};
-    if ($self->{'threads'}) { $self->{'in'}->enqueue($task) }
-    else                    { push @{ $self->{'queue'} }, $task }
+    if   ($self->{'threads'}) {$self->{'in'}->enqueue($task)}
+    else                      {push @{ $self->{'queue'} }, $task}
     return;
 }
 
@@ -366,7 +381,7 @@ sub _result ($r) {
         'tid'     => $tid,
         (length $err ? ('error' => $err) : ()),
     };
-}
+} ## end sub _result
 
 # The serial backend: the next queued task run here and now, its rows kept for
 # the calls that follow (a list task gives several).
@@ -384,7 +399,7 @@ sub _serial_next ($self) {
         push @{ $self->{'pending'} }, _run($engine, $self->{'handlers'}, $self->{'winner'}, $self->{'solved'}, 0, $task);
     }
     return _result(shift @{ $self->{'pending'} });
-}
+} ## end sub _serial_next
 
 sub next ($self) {
     return undef unless $self->{'live'};
@@ -401,7 +416,7 @@ sub next ($self) {
         }
         return _result($r);
     }
-}
+} ## end sub next
 
 =head2 next_timed
 
@@ -429,7 +444,7 @@ poll (measured in the Sokoban project: 232 098 turns in three seconds).
 =cut
 
 sub next_timed ($self, $secs) {
-    return undef unless $self->{'live'};
+    return undef               unless $self->{'live'};
     return $self->_serial_next unless $self->{'threads'};
     $secs = 1 if $secs < 1;    # see the POD: a fractional wait is no wait at all
     while (1) {
@@ -449,14 +464,14 @@ sub next_timed ($self, $secs) {
                 Time::HiRes::sleep(0.02);
             }
             return 0 unless defined $r;
-        }
+        } ## end unless (defined $r)
         if ($r->[0] eq 'DONE') {
             return undef unless --$self->{'live'};
             next;
         }
         return _result($r);
-    }
-}
+    } ## end while (1)
+} ## end sub next_timed
 
 =head2 join
 
@@ -471,7 +486,7 @@ serial backend.
 =cut
 
 sub join ($self) {
-    if ($self->{'threads'}) { $_->join for threads->list }
+    if ($self->{'threads'}) {$_->join for threads->list}
     $self->{'live'} = 0;
     return;
 }
@@ -515,11 +530,9 @@ how many tasks it runs at once (1 in the serial backend).
 
 =cut
 
-sub threaded ($self) { return $self->{'threads'} ? 1 : 0 }
-sub jobs ($self)     { return $self->{'jobs'} }
-
+sub threaded ($self) {return $self->{'threads'} ? 1 : 0}
+sub jobs     ($self) {return $self->{'jobs'}}
 1;
-
 __END__
 
 =head1 AUTHOR

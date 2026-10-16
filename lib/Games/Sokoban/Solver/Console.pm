@@ -11,18 +11,15 @@ package Games::Sokoban::Solver::Console;
 #
 # Lineage: Handy.pm of the Sokoban project (console_width, fit_line, backline,
 # backlinen, podil), the only six of its seventy names the engines use.
-
 use v5.42;
 use Exporter 'import';
-
 our @EXPORT_OK = ('backline', 'backlinen', 'console_width', 'fit_line', 'podil');
 our $VERSION   = '0.01';
 
 # On Windows the colour sequences of Term::ANSIColor reach an older console only
 # through Win32::Console::ANSI (the modern terminal reads them natively).
 # Optional: loaded once, here, inside an eval, never by an engine.
-if ($^O eq 'MSWin32') { eval { require Win32::Console::ANSI; Win32::Console::ANSI->import; 1 } }
-
+if ($^O eq 'MSWin32') {eval {require Win32::Console::ANSI; Win32::Console::ANSI->import; 1}}
 my $lenback = 0;    # the longest transient line printed so far, for a console whose width is not known
 
 # The width of the window STDERR is shown in, or 0 when STDERR is not a console
@@ -33,7 +30,7 @@ my $lenback = 0;    # the longest transient line printed so far, for a console w
 # process when the thread ends.
 sub console_width () {
     return 0 unless $^O eq 'MSWin32';
-    state $ok = eval { require Win32::Console; 1 } // 0;
+    state $ok = eval {require Win32::Console; 1} // 0;
     return 0 unless $ok;
     my @info = Win32::Console::_GetConsoleScreenBufferInfo(Win32::Console::_GetStdHandle(Win32::Console::STD_ERROR_HANDLE()));
     return 0 unless @info >= 9;
@@ -45,8 +42,8 @@ sub console_width () {
 sub fit_line ($string, $width) {
     my ($out, $room) = ('', $width);
     foreach my $part (split /(\e\[[0-9;]*[A-Za-z])/, $string) {
-        if ($part =~ /^\e\[/) { $out .= $part; next }
-        if (length($part) <= $room) { $out .= $part; $room -= length($part); next }
+        if ($part =~ /^\e\[/) {$out .= $part; next}
+        if (length($part) <= $room) {$out .= $part; $room -= length($part); next}
         return $out . substr($part, 0, $room) . "\e[0m";
     }
     return $out;
@@ -94,9 +91,7 @@ sub podil ($number, $base, $deci = undef) {
     }
     return sprintf("%6.0${deci}f%%", $pd);
 }
-
 1;
-
 __END__
 
 =head1 NAME

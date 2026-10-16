@@ -9,14 +9,11 @@ package Games::Sokoban::Solver::Data;
 # Data/, so it is installed wherever the modules are installed and found from
 # here by the location of this very file -- no share directory, no
 # configuration, no current working directory.
-
 use v5.42;
 use Carp           ();
 use File::Basename ();
 use Storable       ();
-
 our $VERSION = '0.01';
-
 my $DIR = File::Basename::dirname(__FILE__) . '/Data';
 
 sub path ($name) {
@@ -28,9 +25,7 @@ sub load ($name) {
     Carp::croak("Games::Sokoban::Solver::Data: no table $file") unless -f $file;
     return Storable::retrieve($file);
 }
-
 1;
-
 __END__
 
 =head1 NAME

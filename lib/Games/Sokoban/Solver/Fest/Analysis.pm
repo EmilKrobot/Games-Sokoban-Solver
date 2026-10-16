@@ -40,17 +40,15 @@ package Games::Sokoban::Solver::Fest::Analysis;
 #     cell of the rectangle, and a neighbour is ALWAYS A NUMBER: either a floor
 #     cell or a wall cell, never "nothing".  geometry() refuses a level that
 #     breaks this rather than letting anything downstream wonder.
-
 use v5.42;
 use Carp           ();
 use Compress::Zlib ();
-use List::Util     ('min');
-use Scalar::Util   ();
-use Storable       ();
-use Time::HiRes    ();
+use List::Util ('min');
+use Scalar::Util                    ();
+use Storable                        ();
+use Time::HiRes                     ();
 use Games::Sokoban::Solver::Data    ();
 use Games::Sokoban::Solver::Munkres ();
-
 our $VERSION = '0.01';
 
 # The level being prepared, one variable per key of the record (record()
@@ -61,11 +59,11 @@ our $VERSION = '0.01';
 # Worked out by install(): %Blocks %Goals_away %Goals_near $Girl_context
 # $Room_links0.
 my (
-    %Blocks, %Blok,  %Cg,        %Cm,         %Cp,         %D,          %Floor,
-    %Goal,   %Goal_hole, %Goals_away, %Goals_near, %Impossible, %Mpdb,  %N,
-    %N8,     %Pattern, %Pattern_at, %Pull_mpdb,  %Room,       %Side,     %Start,
-    %Tunnel_pull, %Tunnel_push, %Walk, %Wall
-);
+    %Blocks,      %Blok,        %Cg,         %Cm,         %Cp,         %D,    %Floor,
+    %Goal,        %Goal_hole,   %Goals_away, %Goals_near, %Impossible, %Mpdb, %N,
+    %N8,          %Pattern,     %Pattern_at, %Pull_mpdb,  %Room,       %Side, %Start,
+    %Tunnel_pull, %Tunnel_push, %Walk,       %Wall
+   );
 my (@Envelope, @Room_area);
 my ($Girl_context, $Room_links0, $Snail, $Sok0, $Width);
 
@@ -89,7 +87,6 @@ our $ANALYSIS_STAMP = 'fest record 2';
 # Direction order is Festival's own: 0 up, 1 right, 2 down, 3 left, and the
 # ring of eight runs clockwise from up, so direction d sits at ring index 2d
 # and the odd indices are the diagonals.
-
 # ---------------------------------------------------------------------------
 # The level, read off its shape
 # ---------------------------------------------------------------------------
@@ -134,7 +131,7 @@ sub geometry ($gm) {
     # The active cells.  %Game{cg} is the player-walk graph, so its keys are
     # every cell the player can ever stand on -- which is what Festival calls
     # the inner cells.
-    $g{'floor'} = {map {$_ => 1} keys %{ $gm->{'cg'} }};
+    $g{'floor'} = { map {$_ => 1} keys %{ $gm->{'cg'} } };
     $g{'cg'}    = $gm->{'cg'};
     $g{'cm'}    = $gm->{'cm'} // {};
 
@@ -146,18 +143,19 @@ sub geometry ($gm) {
     foreach my $p (keys %{ $g{'floor'} }) {
         my ($y, $x) = (int($p / $w), $p % $w);
         Carp::confess("geometry: floor cell $p on the rim of the rectangle")
-            if $y == 0 or $x == 0 or $y == $h - 1 or $x == $w - 1;
+            if $y == 0
+            or $x == 0
+            or $y == $h - 1
+            or $x == $w - 1;
         $g{'n'}{$p}  = [map {$p + $_} @step4];
         $g{'n8'}{$p} = [map {$p + $_} @step8];
         foreach my $q (@{ $g{'n8'}{$p} }) {
             $g{'wall'}{$q} = 1 if !$g{'floor'}{$q};
         }
     }
-
-    $g{'goal'}  = {map {$_ => 1} @{ $gm->{'goal'} }};
-    $g{'start'} = {map {$_ => 1} @{ $gm->{'baggage'} }};
+    $g{'goal'}  = { map {$_ => 1} @{ $gm->{'goal'} } };
+    $g{'start'} = { map {$_ => 1} @{ $gm->{'baggage'} } };
     $g{'sok0'}  = $gm->{'player'};
-
     pull_map(\%g);
     sides(\%g);
     distances(\%g);
@@ -168,9 +166,9 @@ sub geometry ($gm) {
     pattern_placements(\%g);
 
     # the working copies of what %Game holds: used above, handed to nobody
-    delete @g{'w', 'h', 'floor', 'cg', 'cm', 'goal', 'start', 'sok0'};
+    delete @g{ 'w', 'h', 'floor', 'cg', 'cm', 'goal', 'start', 'sok0' };
     return \%g;
-}
+} ## end sub geometry
 
 # FOUR PRODUCTS OF THE ANALYSIS ARE FOUND BY SEARCHING, not by looking at the
 # level: the original decides them with a small best-first search over the
@@ -188,7 +186,6 @@ sub geometry ($gm) {
 # was: @Mpdb_list, @Pull_mpdb_list (pairs of dense indices) and
 # @New_envelope_patterns (one byte board per pattern: BOX on the cells, SOKOBAN
 # on the allowed region)
-
 # The record (record() below) as the engine takes it: compressed.  Fest::
 # take_level unpacks it with thaw(uncompress(...)) and checks the stamp itself.
 sub analysis_record ($record) {
@@ -241,13 +238,13 @@ my $Library;    # the frozen tables; level-independent, so read once per process
 
 sub pattern_placements ($g) {
     $Library //= Games::Sokoban::Solver::Data::load('fest_patterns.stor');
-    my ($w, $h, $floor, $goal) = @$g{'w', 'h', 'floor', 'goal'};
+    my ($w, $h, $floor, $goal) = @$g{ 'w', 'h', 'floor', 'goal' };
     foreach my $kind (['push', 'patterns', 'void'], ['pull', 'pull_patterns', 'reach']) {
         my ($mode, $table, $empty) = @$kind;
         my (@placed, %at);
         foreach my $pt (@{ $Library->{$table} }) {
             foreach my $y (0 .. $h - 1 - $pt->{'maxcy'}) {
-                WINDOW: foreach my $x (0 .. $w - 1 - $pt->{'maxcx'}) {
+            WINDOW: foreach my $x (0 .. $w - 1 - $pt->{'maxcx'}) {
                     my %need = ('box' => [], $empty => [], 'frozen' => []);
                     foreach my $c (@{ $pt->{'cells'} }) {
                         my ($dy, $dx, $what) = @$c;
@@ -272,14 +269,14 @@ sub pattern_placements ($g) {
                             push @{ $at{$q} }, $#placed if $floor->{$q};
                         }
                     }
-                }
-            }
-        }
+                } ## end WINDOW: foreach my $x (0 .. $w - 1 ...)
+            } ## end foreach my $y (0 .. $h - 1 ...)
+        } ## end foreach my $pt (@{ $Library...})
         $g->{'pattern'}{$mode}    = \@placed;
         $g->{'pattern_at'}{$mode} = \%at;
-    }
+    } ## end foreach my $kind (['push', ...])
     return;
-}
+} ## end sub pattern_placements
 
 # tunnel_push{p}, tunnel_pull{p} = a box should not be LEFT STANDING on p.
 #
@@ -301,7 +298,7 @@ sub pattern_placements ($g) {
 # the goal on it, reads like an accident of the original's loop rather than a
 # decision.  It is reproduced, because the stored analysis is the oracle.
 sub tunnels ($g) {
-    my ($floor, $wall, $n) = @$g{'floor', 'wall', 'n'};
+    my ($floor, $wall, $n) = @$g{ 'floor', 'wall', 'n' };
     $g->{'tunnel_push'} = {};
     $g->{'tunnel_pull'} = {};
 
@@ -320,7 +317,7 @@ sub tunnels ($g) {
         }
     }
     return;
-}
+} ## end sub tunnels
 
 # goal_hole{p}   = a goal at the bottom of a dead end: walls on three sides.
 #                  A box pushed in can never come out and blocks nothing, so
@@ -343,7 +340,7 @@ sub tunnels ($g) {
 # with plain floor between them and the end of the hole, which a box can be
 # pushed past -- no goal hole, and the very case the hole's table is for.
 sub goal_holes ($g) {
-    my ($goal, $wall, $n) = @$g{'goal', 'wall', 'n'};
+    my ($goal, $wall, $n) = @$g{ 'goal', 'wall', 'n' };
     my %filled;
     my $changed = 1;
     while ($changed) {
@@ -356,7 +353,7 @@ sub goal_holes ($g) {
     }
     $g->{'goal_hole'} = \%filled;
     return;
-}
+} ## end sub goal_holes
 
 # room{p} = the number of the room cell p belongs to.  Festival's idea of a
 # room is OPEN FLOOR: a 2x2 block of floor is a piece of room, blocks that
@@ -381,7 +378,7 @@ sub goal_holes ($g) {
 # cut at the doorways (cells whose removal splits the floor); the two are
 # different ideas and are not interchangeable.
 sub rooms ($g) {
-    my ($floor, $n, $n8) = @$g{'floor', 'n', 'n8'};
+    my ($floor, $n, $n8) = @$g{ 'floor', 'n', 'n8' };
     $g->{'room'}      = {};
     $g->{'room_area'} = [];
 
@@ -411,7 +408,7 @@ sub rooms ($g) {
             }
         }
         push @corners_of, \@q;
-    }
+    } ## end foreach my $start (sort {$a...})
     return if @corners_of > 70;
 
     # a block's four cells take its room; where two blocks of different rooms
@@ -427,7 +424,6 @@ sub rooms ($g) {
         my @is = map {$kept{$_} ? 1 : 0} $up_left, $up, $left, $shared;
         delete $g->{'room'}{$shared} if $is[0] == $is[3] and $is[1] == $is[2] and $is[0] != $is[1];
     }
-
     foreach my $t (0 .. $#corners_of) {
         my %area;
         foreach my $p (grep {$g->{'room'}{$_} == $t} keys %{ $g->{'room'} }) {
@@ -437,7 +433,7 @@ sub rooms ($g) {
         $g->{'room_area'}[$t] = \%area;
     }
     return;
-}
+} ## end sub rooms
 
 # %Game's cm{box}{to} = the cell the player must stand on to push the box from
 # box to to.  It is used as it stands and not rebuilt, because it is not raw
@@ -464,7 +460,6 @@ sub rooms ($g) {
 # board and rebuilds an edge array of Index_num*4 entries for it, every time --
 # and it prunes none of the three, because Festival has no equivalent of the
 # pattern library at analysis time.
-
 # cp{box}{to} = the cell the player VACATES INTO when he pulls the box from box
 # to to.  He has to be standing on `to` when he starts -- the cell the box is
 # about to occupy -- and he steps back one further, onto the value.  Both cells
@@ -539,9 +534,9 @@ sub side_labels ($g, $p, $blocked) {
         foreach my $other (@{ $g->{'cg'}{$p} }) {
             $label{$other} = $mark if $seen{$other};
         }
-    }
+    } ## end foreach my $start (@{ $g->{...}})
     return \%label;
-}
+} ## end sub side_labels
 
 # ---------------------------------------------------------------------------
 # The two distance tables
@@ -602,7 +597,7 @@ sub distances ($g) {
         $g->{'d'}{$from} = push_spread($g, $from, $g->{'cm'});
     }
     return;
-}
+} ## end sub distances
 
 # Breadth-first over (cell, side) pairs, counting pushes.  The player's side is
 # carried along because it decides which pushes are available next: a push is
@@ -632,7 +627,7 @@ sub push_spread ($g, $from, $cm) {
         }
     }
     return \%d;
-}
+} ## end sub push_spread
 
 # impossible{p} = a box can never usefully stand on p: either no box of the
 # starting position can be brought there, or a box standing there can be
@@ -663,9 +658,8 @@ sub impossible_cells ($g) {
 # ---------------------------------------------------------------------------
 #
 # Verbatim from Fest.pm, where their comments are.
-
 sub set_reach ($v) {
-    my ($box, $frozen) = @$v{'box', 'frozen'};
+    my ($box, $frozen) = @$v{ 'box', 'frozen' };
     my %seen = ($v->{'sok'} => 1);
     my @q    = ($v->{'sok'});
     my $bh   = 0;
@@ -679,10 +673,10 @@ sub set_reach ($v) {
     delete $seen{ $v->{'sok'} } if $frozen->{ $v->{'sok'} };
     $v->{'reach'} = \%seen;
     return $v;
-}
+} ## end sub set_reach
 
 sub regions ($v) {
-    my ($box, $frozen) = @$v{'box', 'frozen'};
+    my ($box,    $frozen) = @$v{ 'box', 'frozen' };
     my (%region, @cells_of);
     foreach my $start (sort {$a <=> $b} keys %Floor) {
         next if defined $region{$start} or $frozen->{$start} or $box->{$start};
@@ -698,12 +692,12 @@ sub regions ($v) {
             }
         }
         push @cells_of, \@q;
-    }
+    } ## end foreach my $start (sort {$a...})
     return (\%region, \@cells_of);
-}
+} ## end sub regions
 
 sub room_links ($v) {
-    my ($box, $frozen) = @$v{'box', 'frozen'};
+    my ($box, $frozen) = @$v{ 'box', 'frozen' };
     my $nrooms = @Room_area;
     my (%link, %done, %met_room);
     foreach my $i (0 .. $nrooms - 1) {
@@ -718,6 +712,7 @@ sub room_links ($v) {
         my @q  = ($start);
         my $bh = 0;
         $done{$start} = 1;
+
         while ($bh < @q) {
             foreach my $nb (@{ $Cg{ $q[$bh++] } }) {
                 if (defined $Room{$nb} and $Room{$nb} != $mine) {
@@ -734,13 +729,13 @@ sub room_links ($v) {
             delete $link{$mine}{$other};
             delete $link{$other}{$mine};
         }
-    }
+    } ## end foreach my $start (sort {$a...})
     foreach my $i (grep {!$met_room{$_}} 0 .. $nrooms - 1) {
         delete $link{$i};
         delete $link{$_}{$i} foreach keys %link;
     }
     return \%link;
-}
+} ## end sub room_links
 
 sub region_of ($v) {
     return min(keys %{ $v->{'reach'} }) // -1;
@@ -753,9 +748,9 @@ sub poskey ($v) {
 }
 
 sub touches_unreachable ($v, $p) {
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     foreach my $q (@{ $N8{$p} }) {
-        next if $Wall{$q} or $frozen->{$q} or $box->{$q};
+        next     if $Wall{$q} or $frozen->{$q} or $box->{$q};
         return 1 if !$reach->{$q};
     }
     return 0;
@@ -763,7 +758,7 @@ sub touches_unreachable ($v, $p) {
 
 sub pattern_dead ($v, $p, $pull) {
     return 0 if !touches_unreachable($v, $p);
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     if ($pull) {
         return 0 if keys %$reach > 4 or $reach->{$Sok0};
         foreach my $i (@{ $Pattern_at{'pull'}{$p} // [] }) {
@@ -783,10 +778,10 @@ sub pattern_dead ($v, $p, $pull) {
         return 1;
     }
     return 0;
-}
+} ## end sub pattern_dead
 
 sub dead_push ($v, $p, $d) {
-    my ($box, $frozen) = @$v{'box', 'frozen'};
+    my ($box, $frozen) = @$v{ 'box', 'frozen' };
     my $np = $N{$p}[$d];
     return 1 if $Wall{$np} or $Impossible{$np};
     my $r  = 2 * $d;
@@ -809,14 +804,14 @@ sub dead_push ($v, $p, $d) {
     delete $after{$p};
     $after{$np} = 1;
     foreach my $square ([$np, $ahead, $right, $ahead_right], [$np, $ahead, $left, $ahead_left]) {
-        next if grep {!($Wall{$_} or $frozen->{$_} or $after{$_})} @$square;
+        next     if grep {!($Wall{$_} or $frozen->{$_} or $after{$_})} @$square;
         return 1 if grep {$after{$_} and !$frozen->{$_} and !$Goal{$_}} @$square;
     }
     return 0;
-}
+} ## end sub dead_push
 
 sub can_be_moved ($v, $p, $pull) {
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     return 0 if !$box->{$p} or $frozen->{$p};
     if ($pull) {
         my $cp = $Cp{$p} or return 0;
@@ -831,24 +826,24 @@ sub can_be_moved ($v, $p, $pull) {
     foreach my $d (0 .. 3) {
         my $to     = $N{$p}[$d];
         my $stance = $cm->{$to} // next;
-        next if $frozen->{$to} or $box->{$to} or !$reach->{$stance};
+        next     if $frozen->{$to} or $box->{$to} or !$reach->{$stance};
         return 1 if !dead_push($v, $p, $d);
     }
     return 0;
-}
+} ## end sub can_be_moved
 
 sub push_move ($v, $from, $to) {
     my $cm     = $Cm{$from} or return undef;
     my $stance = $cm->{$to} // return undef;
     return undef if $v->{'frozen'}{$to} or $v->{'box'}{$to} or !$v->{'reach'}{$stance};
-    return {'from' => $from, 'to' => $to, 'man' => $from, 'pull' => 0};
+    return { 'from' => $from, 'to' => $to, 'man' => $from, 'pull' => 0 };
 }
 
 sub pull_move ($v, $from, $to) {
     my $cp   = $Cp{$from} or return undef;
     my $back = $cp->{$to} // return undef;
     return undef if !$v->{'reach'}{$to} or $v->{'frozen'}{$back} or $v->{'box'}{$back};
-    return {'from' => $from, 'to' => $to, 'man' => $back, 'pull' => 1};
+    return { 'from' => $from, 'to' => $to, 'man' => $back, 'pull' => 1 };
 }
 
 sub apply ($v, $m) {
@@ -857,7 +852,7 @@ sub apply ($v, $m) {
     if ($m->{'isbase'}) {
         my %base = %{ $v->{'base'} };
         delete $base{ $m->{'to'} };
-        return set_reach({'box' => \%box, 'frozen' => {}, 'sok' => $m->{'man'}, 'base' => \%base});
+        return set_reach({ 'box' => \%box, 'frozen' => {}, 'sok' => $m->{'man'}, 'base' => \%base });
     }
     if ($m->{'kill'}) {
         my %reach = %{ $v->{'reach'} };
@@ -870,13 +865,13 @@ sub apply ($v, $m) {
                 push @q, $nb;
             }
         }
-        return {'box' => \%box, 'frozen' => {}, 'sok' => $v->{'sok'}, 'reach' => \%reach};
+        return { 'box' => \%box, 'frozen' => {}, 'sok' => $v->{'sok'}, 'reach' => \%reach };
     }
     $box{ $m->{'to'} } = 1;
-    my $after = {'box' => \%box, 'frozen' => {}, 'sok' => $m->{'man'}};
+    my $after = { 'box' => \%box, 'frozen' => {}, 'sok' => $m->{'man'} };
     $after->{'base'} = $v->{'base'} if $v->{'base'};
     return set_reach($after);
-}
+} ## end sub apply
 
 sub freeze_fixed ($v) {
     freeze_envelopes($v);
@@ -893,7 +888,7 @@ sub freeze_fixed ($v) {
 }
 
 sub freeze_envelopes ($v) {
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     my $changed = 0;
     foreach my $rule (@Envelope) {
         next if grep {!$frozen->{$_} and !$box->{$_}} @{ $rule->{'box'} };
@@ -908,7 +903,7 @@ sub freeze_envelopes ($v) {
 }
 
 sub freeze_2x2 ($v) {
-    my ($box, $frozen) = @$v{'box', 'frozen'};
+    my ($box, $frozen) = @$v{ 'box', 'frozen' };
     my $changed = 0;
     foreach my $p (keys %$box) {
         next if $frozen->{$p};
@@ -925,10 +920,10 @@ sub freeze_2x2 ($v) {
         }
     }
     return $changed;
-}
+} ## end sub freeze_2x2
 
 sub close_hole ($v) {
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     foreach my $p (sort {$a <=> $b} keys %Floor) {
         next if $box->{$p} or $frozen->{$p} or $Goal{$p};
         my @open = grep {!$frozen->{$_}} @{ $Cg{$p} };
@@ -942,13 +937,13 @@ sub close_hole ($v) {
 }
 
 sub freeze_immovable ($v) {
-    my $frozen = $v->{'frozen'};
-    my %left   = map {$_ => 1} grep {!$frozen->{$_}} keys %{ $v->{'box'} };
-    my $rest   = {'box' => \%left, 'frozen' => $frozen};
+    my $frozen  = $v->{'frozen'};
+    my %left    = map {$_ => 1} grep {!$frozen->{$_}} keys %{ $v->{'box'} };
+    my $rest    = { 'box' => \%left, 'frozen' => $frozen };
     my $removed = 1;
     while ($removed) {
         $removed = 0;
-        BOX: foreach my $p (keys %left) {
+    BOX: foreach my $p (keys %left) {
             my $cm = $Cm{$p} or next;
             foreach my $d (0 .. 3) {
                 my $to     = $N{$p}[$d];
@@ -960,23 +955,23 @@ sub freeze_immovable ($v) {
                 next BOX;
             }
         }
-    }
+    } ## end while ($removed)
     my $changed = 0;
     foreach my $p (keys %left) {
         $frozen->{$p} = 1;
         $changed = 1;
     }
     return $changed;
-}
+} ## end sub freeze_immovable
 
 sub freeze_diagonals ($v) {
-    my ($box, $frozen) = @$v{'box', 'frozen'};
+    my ($box, $frozen) = @$v{ 'box', 'frozen' };
     my $changed = 0;
     foreach my $run (@{ diagonal_voids($v) }) {
         my ($cells, $diag) = @$run;
         next if grep {$Goal{$_}} @$cells;
-        my ($first, $last) = @$cells[0, -1];
-        my ($behind, $end) = ($N8{$first}[$diag == 3 ? 7 : 1], $N8{$last}[$diag]);
+        my ($first,  $last) = @$cells[0, -1];
+        my ($behind, $end)  = ($N8{$first}[$diag == 3 ? 7 : 1], $N8{$last}[$diag]);
 
         # the cells flanking each void cell left and right, the cell above the
         # run and the cell below it
@@ -986,18 +981,17 @@ sub freeze_diagonals ($v) {
         # the two corner caps -- they count only if something stands there;
         # the run may have been capped by a pair of walls instead
         push @line, grep {$frozen->{$_} or $box->{$_}} $behind, $end;
-
         foreach my $q (@line) {
             next if !$box->{$q} or $frozen->{$q};
             $frozen->{$q} = 1;
             $changed = 1;
         }
-    }
+    } ## end foreach my $run (@{ diagonal_voids...})
     return $changed;
-}
+} ## end sub freeze_diagonals
 
 sub diagonal_voids ($v) {
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     my %void;
     foreach my $p (keys %Floor) {
         next if $box->{$p} or $frozen->{$p} or $reach->{$p};
@@ -1012,30 +1006,27 @@ sub diagonal_voids ($v) {
             next
                 if !($Wall{$behind} or $frozen->{$behind} or $box->{$behind})
                 and !(($Wall{$up} or $frozen->{$up}) and ($Wall{$side} or $frozen->{$side}));
-
             my @cells = ($p);
             push @cells, $N8{ $cells[-1] }[$diag] while $void{ $N8{ $cells[-1] }[$diag] };
-
             my $last = $cells[-1];
             my $end  = $N8{$last}[$diag];
             my ($beside, $below) = @{ $N8{$last} }[$diag == 3 ? 2 : 6, 4];
             next
                 if !($Wall{$end} or $frozen->{$end} or $box->{$end})
                 and !(($Wall{$beside} or $frozen->{$beside}) and ($Wall{$below} or $frozen->{$below}));
-
             push @runs, [\@cells, $diag];
-        }
-    }
+        } ## end foreach my $diag (3, 5)
+    } ## end foreach my $p (sort {$a <=>...})
     return \@runs;
-}
+} ## end sub diagonal_voids
 
 sub freeze_crystaline ($v) {
-    my ($box, $frozen) = @$v{'box', 'frozen'};
+    my ($box, $frozen) = @$v{ 'box', 'frozen' };
     my %home    = map {$_ => 1} grep {!$frozen->{$_}} keys %Goal;
     my $removed = 1;
     while ($removed) {
         $removed = 0;
-        HOME: foreach my $p (keys %home) {
+    HOME: foreach my $p (keys %home) {
             foreach my $d (0 .. 3) {
                 my $to = $N{$p}[$d];
                 next if $Wall{$to} or $frozen->{$to} or $home{$to};
@@ -1054,7 +1045,7 @@ sub freeze_crystaline ($v) {
         $changed = 1;
     }
     return $changed;
-}
+} ## end sub freeze_crystaline
 
 sub sides_in ($v, $p) {
     my $frozen = $v->{'frozen'};
@@ -1077,9 +1068,9 @@ sub sides_in ($v, $p) {
         foreach my $other (@{ $Cg{$p} }) {
             $label{$other} = $mark if $seen{$other};
         }
-    }
+    } ## end foreach my $start (@{ $Cg{$p...}})
     return \%label;
-}
+} ## end sub sides_in
 
 sub box_spread ($v, $seeds, $pull, $strict = 0, $side = {}) {
     my $frozen = $v->{'frozen'};
@@ -1113,12 +1104,12 @@ sub box_spread ($v, $seeds, $pull, $strict = 0, $side = {}) {
             $d{$to} //= $n + 1;
             push @q, [$to, $land, $n + 1];
         }
-    }
+    } ## end while ($bh < @q)
     return \%d;
-}
+} ## end sub box_spread
 
 sub stance_in_dead_pocket ($v, $box_cell, $stance) {
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     return 0 if $box->{$stance};
     return 0 if 1 != grep {!$frozen->{$_}} @{ $Cg{$stance} };
     return 0 if $reach->{$stance} and !$reach->{$box_cell};
@@ -1128,7 +1119,7 @@ sub stance_in_dead_pocket ($v, $box_cell, $stance) {
 sub live_cells ($v) {
     my $frozen = $v->{'frozen'};
     my @q      = grep {!$frozen->{$_}} keys %Goal;
-    my %ok     = map {$_ => 1} @q;
+    my %ok     = map  {$_ => 1} @q;
     my $bh     = 0;
     while ($bh < @q) {
         my $cp = $Cp{ $q[$bh++] } or next;
@@ -1139,14 +1130,14 @@ sub live_cells ($v) {
         }
     }
     return \%ok;
-}
+} ## end sub live_cells
 
 sub dead_on_arrival ($box, $frozen, $p) {
     my $n8 = $N8{$p};
     foreach my $k (1, 3, 5, 7) {
         my ($side1, $corner, $side2) = @$n8[$k - 1, $k, ($k + 1) & 7];
         return 1 if !$Goal{$p} and ($Wall{$side1} or $frozen->{$side1}) and ($Wall{$side2} or $frozen->{$side2});
-        next if 3 != grep {$Wall{$_} or $frozen->{$_} or $box->{$_}} $side1, $corner, $side2;
+        next     if 3 != grep {$Wall{$_} or $frozen->{$_} or $box->{$_}} $side1, $corner, $side2;
         return 1 if !$Goal{$p};
         return 1 if grep {$box->{$_} and !$frozen->{$_} and !$Goal{$_}} $side1, $corner, $side2;
     }
@@ -1167,7 +1158,7 @@ sub landing_cells ($v, $from, $pull, $live) {
         $ok{$p} = 1;
     }
     return \%ok;
-}
+} ## end sub landing_cells
 
 sub box_moves ($v, $from, $pull, $ok, $want_route = 0) {
     return () if !$v->{'box'}{$from} or $v->{'frozen'}{$from};
@@ -1186,10 +1177,11 @@ sub box_moves ($v, $from, $pull, $ok, $want_route = 0) {
     my @flood;
     foreach my $side (grep {$v->{'reach'}{$_}} @{ $Cg{$from} }) {
         next if grep {$_->{$side}} @flood;
-        my $there = set_reach({'box' => $v->{'box'}, 'frozen' => $v->{'frozen'}, 'sok' => $side});
+        my $there = set_reach({ 'box' => $v->{'box'}, 'frozen' => $v->{'frozen'}, 'sok' => $side });
         push @flood, $there->{'reach'};
         $start{ $from . '|' . region_of($there) } = 1;
     }
+
     # THE ORDER the sides of the box are tried in is part of the answer.  A
     # state can be arrived at from several sides, and the macro is named after
     # the side that got there FIRST -- so "first" has to mean what it meant in
@@ -1204,29 +1196,30 @@ sub box_moves ($v, $from, $pull, $ok, $want_route = 0) {
     while ($bh < @q) {
         my ($c, $view, $key, $n, $came) = @{ $q[$bh++] };
         foreach my $j (defined $came ? ($came, grep {$_ != $came} 0 .. 3) : 0 .. 3) {
-            my $to = $N{$c}[ $pull ? $j : $j ^ 2 ];
+            my $to = $N{$c}[$pull ? $j : $j ^ 2];
             next if !$ok->{$to};
-            my $m    = $step->($view, $c, $to) or next;
-            my $next = set_reach({'box' => {%rest, $to => 1}, 'frozen' => $v->{'frozen'}, 'sok' => $m->{'man'}});
+            my $m        = $step->($view, $c, $to) or next;
+            my $next     = set_reach({ 'box' => { %rest, $to => 1 }, 'frozen' => $v->{'frozen'}, 'sok' => $m->{'man'} });
             my $next_key = $to . '|' . region_of($next);
-            $next_key = $first if $start{$next_key};
+            $next_key                   = $first if $start{$next_key};
             $undone_by{$next_key}{$key} = 1;
             $last_from{$next_key}{$c}   = 1;
             next if $seen{$next_key}++;
             $came_by{$next_key} = [$key, $c, $to];
-            push @moves, {
-                'from'       => $from,
-                'to'         => $to,
-                'man'        => $m->{'man'},
-                'side'       => $j,
-                'pull'       => $pull,
-                'pushes'     => $n + 1,
-                'reversible' => 0,
-            };
+            push @moves,
+                {
+                    'from'       => $from,
+                    'to'         => $to,
+                    'man'        => $m->{'man'},
+                    'side'       => $j,
+                    'pull'       => $pull,
+                    'pushes'     => $n + 1,
+                    'reversible' => 0,
+                };
             push @state, $next_key;
-            push @q, [$to, $next, $next_key, $n + 1, $j];
-        }
-    }
+            push @q,     [$to, $next, $next_key, $n + 1, $j];
+        } ## end foreach my $j (defined $came...)
+    } ## end while ($bh < @q)
 
     # walk the edges backwards from the start
     my %back = ($first => 1);
@@ -1247,17 +1240,16 @@ sub box_moves ($v, $from, $pull, $ok, $want_route = 0) {
         $moves[$i]{'route'} = \@route;
     }
     return @moves;
-}
+} ## end sub box_moves
 
 sub corral_boxes ($v) {
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     return undef if !%$reach;
-
     my ($region, $cells_of) = regions($v);
     my %region   = %$region;
     my @cells_of = @$cells_of;
     my $mine     = $region{ min(keys %$reach) };
-    my @boxes = sort {$a <=> $b} grep {!$frozen->{$_}} keys %$box;
+    my @boxes    = sort {$a <=> $b} grep {!$frozen->{$_}} keys %$box;
 
     # a candidate is a region straight across a box from the player's
     my (%candidate, %touch);
@@ -1271,14 +1263,13 @@ sub corral_boxes ($v) {
             $touch{$r1}{$_} = 1 foreach @round;
         }
     }
-
     my $try = sub (@ids) {
         my %used   = map {$_ => 1} @ids;
         my %corral = map {$_ => 1} map {@{ $cells_of[$_] }} @ids;
         my (%edge, $edge_view);
         my $find_edge = sub () {
             %edge      = map {$_ => 1} grep {$box->{$_} and !$frozen->{$_}} map {@{ $N8{$_} }} keys %corral;
-            $edge_view = {'box' => \%edge, 'frozen' => $frozen};
+            $edge_view = { 'box' => \%edge, 'frozen' => $frozen };
         };
         my $taken = sub ($q) {$Wall{$q} or $frozen->{$q} or $edge{$q}};
 
@@ -1286,7 +1277,7 @@ sub corral_boxes ($v) {
         # pusher's cell may hold another edge box; callers that mind say so.
         my $into = sub ($p, $k) {
             my ($pusher, $dest) = @{ $N{$p} }[$k, $k ^ 2];
-            return 0 if $Wall{$pusher} or $frozen->{$pusher} or $taken->($dest);
+            return 0 if $Wall{$pusher}   or $frozen->{$pusher} or $taken->($dest);
             return 0 if $corral{$pusher} or !$corral{$dest};
             return 0 if !defined(($Cm{$p} // {})->{$dest});
             return !dead_push($edge_view, $p, $k ^ 2);
@@ -1294,10 +1285,10 @@ sub corral_boxes ($v) {
 
         # something left to do in there?
         $find_edge->();
-        return undef if !grep({$Goal{$_}} keys %corral) and !grep({!$Goal{$_}} keys %edge);
+        return undef if !grep({ $Goal{$_} } keys %corral) and !grep({!$Goal{$_}} keys %edge);
 
         # take in the regions that belong to the same problem
-        GROW: while (1) {
+    GROW: while (1) {
             $find_edge->();
             foreach my $p (sort {$a <=> $b} keys %edge) {
                 next if !grep {$corral{$_}} @{ $N{$p} };
@@ -1314,15 +1305,14 @@ sub corral_boxes ($v) {
                         and defined(($Cm{$p} // {})->{$dest})
                         and !dead_push($edge_view, $p, $k ^ 2);
                     foreach my $id (grep {defined $_ and $_ != $mine and !$used{$_}} @more) {
-                        $used{$id} = 1;
+                        $used{$id}  = 1;
                         $corral{$_} = 1 foreach @{ $cells_of[$id] };
                         next GROW;
                     }
-                }
-            }
+                } ## end foreach my $k (0 .. 3)
+            } ## end foreach my $p (sort {$a <=>...})
             last;
-        }
-
+        } ## end GROW: while (1)
         my %option;
         foreach my $p (keys %edge) {
             foreach my $k (0 .. 3) {
@@ -1338,14 +1328,13 @@ sub corral_boxes ($v) {
                     and !dead_push($edge_view, $p, $k ^ 2);
 
                 # a push into it that he cannot make from here
-                next if !$into->($p, $k) or $edge{$pusher};
+                next         if !$into->($p, $k) or $edge{$pusher};
                 return undef if !$reach->{$pusher};
                 $option{$p} = 1;
-            }
-        }
+            } ## end foreach my $k (0 .. 3)
+        } ## end foreach my $p (keys %edge)
         return \%option;
-    };
-
+    }; ## end sub
     foreach my $id (grep {$candidate{$_}} 0 .. $#cells_of) {
         my $option = $try->($id) or next;
         return $option;
@@ -1359,7 +1348,7 @@ sub corral_boxes ($v) {
         }
     }
     return undef;
-}
+} ## end sub corral_boxes
 
 sub why_dead ($after, $m, $opt) {
     my $to = $m->{'to'};
@@ -1370,8 +1359,11 @@ sub why_dead ($after, $m, $opt) {
     return ''           if $bases and $bases->{$to};
     return 'impossible' if $Impossible{$to};
     if ($m->{'pull'}) {
-        return 'pair'            if forbidden_pair($after, \%Pull_mpdb);
-        return 'inefficient'     if ($opt->{'inefficient'} // 1) and !($opt->{'keep'} and $opt->{'keep'}{$to}) and is_inefficient($after, $to, 1);
+        return 'pair' if forbidden_pair($after, \%Pull_mpdb);
+        return 'inefficient'
+            if ($opt->{'inefficient'} // 1)
+            and !($opt->{'keep'} and $opt->{'keep'}{$to})
+            and is_inefficient($after, $to, 1);
         return 'no continuation' if !($opt->{'far_pulls'} ? can_go_on_pulling_far($after) : can_go_on_pulling($after));
         return 'pattern'         if pattern_dead($after, $to, 1);
 
@@ -1384,11 +1376,12 @@ sub why_dead ($after, $m, $opt) {
             }
         }
         return '';
-    }
+    } ## end if ($m->{'pull'})
 
     # `keep`: cells where a box may be left standing however wasteful it looks
     # -- a search that is aiming for a particular arrangement says so
-    my $wasteful = (($opt->{'inefficient'} // 1) and !($opt->{'keep'} and $opt->{'keep'}{$to}) and is_inefficient($after, $to, 0));
+    my $wasteful =
+        (($opt->{'inefficient'} // 1) and !($opt->{'keep'} and $opt->{'keep'}{$to}) and is_inefficient($after, $to, 0));
     if ($opt->{'blok'}) {
         return 'blok'        if blok_forbids($after, $m);
         return 'inefficient' if $wasteful;
@@ -1400,12 +1393,12 @@ sub why_dead ($after, $m, $opt) {
     return 'shut in'     if is_shut_in_3x3($after, $to);
     return 'pattern'     if pattern_dead($after, $to, 0);
     return '';
-}
+} ## end sub why_dead
 
 sub forbidden_pair ($v, $pair) {
-    my ($box, $frozen) = @$v{'box', 'frozen'};
+    my ($box, $frozen) = @$v{ 'box', 'frozen' };
     foreach my $p (keys %$box) {
-        next if $frozen->{$p} or !$pair->{$p};
+        next     if $frozen->{$p} or !$pair->{$p};
         return 1 if grep {$box->{$_} and !$frozen->{$_}} keys %{ $pair->{$p} };
     }
     return 0;
@@ -1417,7 +1410,7 @@ sub blok_forbids ($after, $m) {
     foreach my $from (@{ $m->{'last_from'} }) {
         my $entries = ($Blok{$from} // {})->{ $m->{'to'} } or next;
         foreach my $entry (@$entries) {
-            return 1 if ($boxes&.$entry) eq $entry;
+            return 1 if ($boxes &. $entry) eq $entry;
         }
     }
     return 0;
@@ -1429,7 +1422,7 @@ sub is_frozen_cluster ($v, $p) {
     my $free   = sub ($q) {
         my $cm = $Cm{$q} or return 0;
         foreach my $to (keys %$cm) {
-            next if $frozen->{$to} or $left{$to};
+            next     if $frozen->{$to} or $left{$to};
             return 1 if !$frozen->{ $cm->{$to} } and !$left{ $cm->{$to} };
         }
         return 0;
@@ -1445,16 +1438,16 @@ sub is_frozen_cluster ($v, $p) {
         }
     }
     return (grep {!$Goal{$_}} keys %left) ? 1 : 0;
-}
+} ## end sub is_frozen_cluster
 
 sub is_shut_in_3x3 ($v, $p) {
     return 0 if !touches_unreachable($v, $p);
-    my ($box, $frozen) = @$v{'box', 'frozen'};
+    my ($box, $frozen) = @$v{ 'box', 'frozen' };
     my $taken = sub ($q) {$Wall{$q} or $frozen->{$q} or $box->{$q}};
     my $wall  = sub ($q) {$Wall{$q} or $frozen->{$q}};
     foreach my $q ($p, @{ $N8{$p} }) {
         next if !$Floor{$q} or $taken->($q) or $Goal{$q};
-        next if grep {!$taken->($_)} @{ $N{$q} };
+        next if grep  {!$taken->($_)} @{ $N{$q} };
         next if !grep {$box->{$_} and !$frozen->{$_} and !$Goal{$_}} @{ $N{$q} };
         my $ring = $N8{$q};
         return 1 if $taken->($ring->[7]) and $taken->($ring->[3]);
@@ -1462,15 +1455,15 @@ sub is_shut_in_3x3 ($v, $p) {
         foreach my $i (0, 2, 4, 6) {
             next if !$wall->($ring->[$i]);
             my ($c1, $c2) = @$ring[($i + 3) & 7, ($i + 5) & 7];
-            next if !$taken->($c1) or !$taken->($c2);
-            return 1 if $wall->($c1) or $wall->($c2);
+            next     if !$taken->($c1) or !$taken->($c2);
+            return 1 if $wall->($c1)   or $wall->($c2);
         }
     }
     return 0;
-}
+} ## end sub is_shut_in_3x3
 
 sub is_inefficient ($v, $p, $pull) {
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     my $ring = $N8{$p};
     my $wall = sub ($k) {my $q = $ring->[$k & 7]; $Wall{$q} or $frozen->{$q}};
     if ($pull) {
@@ -1480,7 +1473,7 @@ sub is_inefficient ($v, $p, $pull) {
             my $q = $ring->[$j];
             next if $Wall{$q} or $frozen->{$q} or $box->{$q};
             my $beyond = $N{$q}[$j >> 1];
-            next if !($Wall{$beyond} or $frozen->{$beyond});
+            next     if !($Wall{$beyond} or $frozen->{$beyond});
             return 1 if $wall->($j + 1) and $wall->($j + 3) and $wall->($j + 4);
             return 1 if $wall->($j + 4) and $wall->($j + 5) and $wall->($j + 7);
         }
@@ -1491,19 +1484,19 @@ sub is_inefficient ($v, $p, $pull) {
     my $in_reach = sub ($k) {$reach->{ $ring->[$k & 7] }};
     my $is_box   = sub ($k) {my $q = $ring->[$k & 7]; $box->{$q} and !$frozen->{$q}};
     foreach my $j (0, 2, 4, 6) {
-        next if !$wall->($j + 3) or !$wall->($j + 5);
-        return 1 if $wall->($j + 2) and !$wall->($j + 6) and !$in_reach->($j + 6);
-        return 1 if $wall->($j + 6) and !$wall->($j + 2) and !$in_reach->($j + 2);
-        return 1 if $wall->($j + 2) and !$wall->($j + 6) and $in_reach->($j);
-        return 1 if $wall->($j + 6) and !$wall->($j + 2) and $in_reach->($j);
+        next     if !$wall->($j + 3) or !$wall->($j + 5);
+        return 1 if $wall->($j + 2)   and !$wall->($j + 6) and !$in_reach->($j + 6);
+        return 1 if $wall->($j + 6)   and !$wall->($j + 2) and !$in_reach->($j + 2);
+        return 1 if $wall->($j + 2)   and !$wall->($j + 6) and $in_reach->($j);
+        return 1 if $wall->($j + 6)   and !$wall->($j + 2) and $in_reach->($j);
         return 1 if $is_box->($j + 2) and !$in_reach->($j + 6);
         return 1 if $is_box->($j + 6) and !$in_reach->($j + 2);
     }
     return 0;
-}
+} ## end sub is_inefficient
 
 sub can_go_on_pulling ($v) {
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     return 1 if $reach->{$Sok0} and !grep {!$Start{$_}} keys %$box;
     foreach my $p (keys %$box) {
         foreach my $d (0 .. 3) {
@@ -1521,19 +1514,20 @@ sub possible_moves ($v, $pull, $opt = {}) {
     # (a view comes with nothing frozen, except in the small searches for dead
     # positions: theirs are boxes that were walled in before the search began
     # and stay walls all through it)
-    my $work = {'box' => $v->{'box'}, 'frozen' => {%{ $v->{'frozen'} }}, 'sok' => $v->{'sok'}, 'reach' => {%{ $v->{'reach'} }}};
+    my $work =
+        { 'box' => $v->{'box'}, 'frozen' => { %{ $v->{'frozen'} } }, 'sok' => $v->{'sok'}, 'reach' => { %{ $v->{'reach'} } } };
     my ($live, $only);
     if (!$pull) {
         freeze_fixed($work);
         $live = live_cells($work);
         $only = corral_boxes($work) if $opt->{'corral'} // 1;
     }
+
     # with bases, a box may only be pulled to where a box could have been
     # pushed from one of them
     my $bases     = $pull  ? $v->{'base'}         : undef;
     my $from_base = $bases ? base_landing($bases) : undef;
-    $opt = {%$opt, 'bases' => $bases} if $bases;
-
+    $opt = { %$opt, 'bases' => $bases } if $bases;
     my @moves;
     foreach my $from (keys %{ $work->{'box'} }) {
         next if $only and !$only->{$from};
@@ -1544,13 +1538,13 @@ sub possible_moves ($v, $pull, $opt = {}) {
             my %box = %{ $work->{'box'} };
             delete $box{$from};
             $box{ $m->{'to'} } = 1;
-            my $after = set_reach({'box' => \%box, 'frozen' => $work->{'frozen'}, 'sok' => $m->{'man'}});
+            my $after = set_reach({ 'box' => \%box, 'frozen' => $work->{'frozen'}, 'sok' => $m->{'man'} });
             push @moves, $m if !why_dead($after, $m, $opt);
         }
     }
     @moves = mark_base_moves($v, \@moves) if $bases;
     return (\@moves, $only ? 1 : 0);
-}
+} ## end sub possible_moves
 
 sub in_original_order (@moves) {
     my $side = sub ($m) {
@@ -1565,61 +1559,63 @@ sub in_original_order (@moves) {
 
 sub can_be_packed ($start, $max) {
     my $nbox   = keys %{ $start->{'box'} };
-    my $result = small_search({
-        'start'  => $start,
-        'max'    => $max,
-        'moves'  => sub ($view) {(possible_moves($view, 0, {'corral' => 0}))[0]},
+    my $result = small_search(
+        {
+            'start' => $start,
+            'max'   => $max,
+            'moves' => sub ($view) {(possible_moves($view, 0, { 'corral' => 0 }))[0]},
 
-        # whatever the starting view has frozen is a wall for the whole search
-        'play' => sub ($view, $m) {
-            my %box = %{ $view->{'box'} };
-            delete $box{ $m->{'from'} };
-            $box{ $m->{'to'} } = 1;
-            return set_reach({'box' => \%box, 'frozen' => $view->{'frozen'}, 'sok' => $m->{'man'}});
-        },
-        'solved' => sub ($view) {!grep {!$Goal{$_}} keys %{ $view->{'box'} }},
-        'better' => sub ($son, $best) {
-            $son->{'packed'} > $best->{'packed'}
-                or ($son->{'packed'} == $best->{'packed'} and $son->{'regions'} < $best->{'regions'});
-        },
+            # whatever the starting view has frozen is a wall for the whole search
+            'play' => sub ($view, $m) {
+                my %box = %{ $view->{'box'} };
+                delete $box{ $m->{'from'} };
+                $box{ $m->{'to'} } = 1;
+                return set_reach({ 'box' => \%box, 'frozen' => $view->{'frozen'}, 'sok' => $m->{'man'} });
+            },
+            'solved' => sub ($view) {!grep {!$Goal{$_}} keys %{ $view->{'box'} }},
+            'better' => sub ($son, $best) {
+                $son->{'packed'} > $best->{'packed'}
+                    or ($son->{'packed'} == $best->{'packed'} and $son->{'regions'} < $best->{'regions'});
+            },
 
-        # before each pick: a move of the newest position that packs them all
-        # is as good as having made it
-        'look' => sub ($open) {
-            my $last = $open->[-1];
-            return 'unknown' if @{ $last->{'sons'} } > 1000;
-            return 'solved'  if grep {$_->{'packed'} == $nbox} @{ $last->{'sons'} };
-            return '';
-        },
-    });
-    return {'solved' => 1, 'dead' => 0, 'unknown' => -1}->{$result};
-}
+            # before each pick: a move of the newest position that packs them all
+            # is as good as having made it
+            'look' => sub ($open) {
+                my $last = $open->[-1];
+                return 'unknown' if @{ $last->{'sons'} } > 1000;
+                return 'solved'  if grep {$_->{'packed'} == $nbox} @{ $last->{'sons'} };
+                return '';
+            },
+        }
+    );
+    return { 'solved' => 1, 'dead' => 0, 'unknown' => -1 }->{$result};
+} ## end sub can_be_packed
 
 sub small_search ($spec) {
     my (@open, %at);
-    my $play   = $spec->{'play'} // \&apply;
-    my $key_of = $spec->{'key'}  // \&poskey;
-
+    my $play          = $spec->{'play'} // \&apply;
+    my $key_of        = $spec->{'key'}  // \&poskey;
     my $open_position = sub ($view, $key, $father) {
         my @sons;
         foreach my $m (in_original_order(@{ $spec->{'moves'}->($view) })) {
             my $after = $play->($view, $m);
-            push @sons, {
-                'after'   => $after,
-                'key'     => $key_of->($after),
-                'packed'  => scalar(grep {$Goal{$_}} keys %{ $after->{'box'} }),
-                'unpacked' => scalar(grep {$Start{$_}} keys %{ $after->{'box'} }),
-                'boxes'   => scalar(keys %{ $after->{'box'} }),
-                'regions' => scalar @{ (regions($after))[1] },
-                'zone'    => scalar(keys %{ $after->{'zone'} // {} }),
-                'dead'    => 0,
-            };
+            push @sons,
+                {
+                    'after'    => $after,
+                    'key'      => $key_of->($after),
+                    'packed'   => scalar(grep {$Goal{$_}} keys %{ $after->{'box'} }),
+                    'unpacked' => scalar(grep {$Start{$_}} keys %{ $after->{'box'} }),
+                    'boxes'    => scalar(keys %{ $after->{'box'} }),
+                    'regions'  => scalar @{ (regions($after))[1] },
+                    'zone'     => scalar(keys %{ $after->{'zone'} // {} }),
+                    'dead'     => 0,
+                };
         }
-        my $pos = {'view' => $view, 'key' => $key, 'sons' => \@sons, 'dead' => 0, 'father' => $father};
+        my $pos = { 'view' => $view, 'key' => $key, 'sons' => \@sons, 'dead' => 0, 'father' => $father };
         push @open, $pos;
         $at{$key} = $pos;
         return $pos;
-    };
+    }; ## end sub
 
     # `solved` ends the search; `finished` is what keeps a position with no
     # way on from being called dead.  They are one question unless the spec
@@ -1645,7 +1641,7 @@ sub small_search ($spec) {
                 $changed = 1;
             }
         }
-    };
+    }; ## end $settle = sub
 
     # (the start goes by a name no move can lead to unless the spec says it is
     # a position like any other: the analyses start with the player
@@ -1664,7 +1660,6 @@ sub small_search ($spec) {
         my $verdict = $spec->{'look'}->(\@open);
         return $verdict if $verdict;
         $settle->();
-
         my ($best, $from);
         foreach my $pos (grep {!$_->{'dead'}} @open) {
             foreach my $son (grep {!$_->{'dead'} and !$at{ $_->{'key'} }} @{ $pos->{'sons'} }) {
@@ -1672,16 +1667,15 @@ sub small_search ($spec) {
             }
         }
         return 'dead' if !$best;
-
         my $pos = $open_position->($best->{'after'}, $best->{'key'}, $from);
         $settle->();
         return 'solved'  if $solved->($pos->{'view'});
         return 'unknown' if @open == $spec->{'max'};
-    }
-}
+    } ## end while (1)
+} ## end sub small_search
 
 sub can_go_on_pulling_far ($v) {
-    my ($box, $frozen, $reach) = @$v{'box', 'frozen', 'reach'};
+    my ($box, $frozen, $reach) = @$v{ 'box', 'frozen', 'reach' };
     return 1 if $reach->{$Sok0} and !grep {!$Start{$_}} keys %$box;
     return 1 if keys %$reach > 1;
     return scalar grep {$frozen->{$_}} map {@{ $N{$_} }} keys %$reach;
@@ -1689,21 +1683,20 @@ sub can_go_on_pulling_far ($v) {
 
 sub base_landing ($bases) {
     return $Base_landing{ join ',', sort {$a <=> $b} keys %$bases } //= do {
-        my $spread = box_spread({'box' => {}, 'frozen' => {}}, [keys %$bases], 0);
-        +{(map {$_ => 1} keys %$spread), %$bases};
+        my $spread = box_spread({ 'box' => {}, 'frozen' => {} }, [keys %$bases], 0);
+        +{ (map {$_ => 1} keys %$spread), %$bases };
     };
 }
 
 sub biggest_base_group ($v) {
     my $box   = $v->{'box'};
     my @bases = sort {$a <=> $b} grep {!$box->{$_}} keys %{ $v->{'base'} };
-    my $board = {'box' => {}, 'frozen' => {%$box}};
+    my $board = { 'box' => {}, 'frozen' => {%$box} };
     my %side;
     my @reach = map {
         my $spread = box_spread($board, [$_], 0, 0, \%side);
-        +{%$spread, $_ => 0};
+        +{ %$spread, $_ => 0 };
     } @bases;
-
     my @group = (-1) x @bases;
     my $next  = 0;
     foreach my $i (0 .. $#bases) {
@@ -1723,15 +1716,15 @@ sub biggest_base_group ($v) {
         $out{ $bases[$_] } = 1 foreach grep {$group[$_] == $group[$i]} $i .. $#bases;
     }
     return \%out;
-}
+} ## end sub biggest_base_group
 
 sub far_enough_apart ($c1, $c2) {
     return 1 if ($Walk{$c1}{$c2} // 1000000) >= 6;
     my ($r1, $r2) = ($Room{$c1}, $Room{$c2});
-    return $r1 != $r2 ? 1 : 0 if defined $r1 and defined $r2;
+    return $r1 != $r2 ? 1 : 0 if defined $r1  and defined $r2;
     return 0                  if !defined $r1 and !defined $r2;
-    return 0                  if defined $r1 and $Room_area[$r1]{$c2};
-    return 0                  if defined $r2 and $Room_area[$r2]{$c1};
+    return 0                  if defined $r1  and $Room_area[$r1]{$c2};
+    return 0                  if defined $r2  and $Room_area[$r2]{$c1};
     return (int($c1 / $Width) != int($c2 / $Width) and $c1 % $Width != $c2 % $Width) ? 1 : 0;
 }
 
@@ -1751,10 +1744,9 @@ sub mark_base_moves ($v, $moves) {
     my @moves = in_original_order(@$moves);
     my $open  = biggest_base_group($v);
     return @moves if grep {!$v->{'reach'}{$_}} keys %$open;
-
     my (@home, %done);
     foreach my $m (@moves) {
-        my ($from, $to) = @$m{'from', 'to'};
+        my ($from, $to) = @$m{ 'from', 'to' };
         next if $done{$from} or !$open->{$to} or !far_enough_apart($from, $to);
         my %box  = %{ $v->{'box'} };
         my %base = %{ $v->{'base'} };
@@ -1762,10 +1754,10 @@ sub mark_base_moves ($v, $moves) {
         delete $base{$to};
         next if !boxes_match_bases(\%box, \%base);
         $done{$from} = 1;
-        push @home, {%$m, 'isbase' => 1};
+        push @home, { %$m, 'isbase' => 1 };
     }
     return @home ? @home : @moves;
-}
+} ## end sub mark_base_moves
 
 sub pullable_somewhere ($box, $p) {
     foreach my $d (0 .. 3) {
@@ -1778,10 +1770,10 @@ sub pullable_somewhere ($box, $p) {
 }
 
 sub peel_order ($box_in) {
-    my %box   = %$box_in;
-    my %order = map {$_ => -1} keys %box;
+    my %box     = %$box_in;
+    my %order   = map  {$_ => -1} keys %box;
     my @current = grep {pullable_somewhere(\%box, $_)} sort {$a <=> $b} keys %box;
-    my %seen    = map {$_ => 1} @current;
+    my %seen    = map  {$_ => 1} @current;
     my $depth   = 0;
     while (@current) {
         foreach my $p (@current) {
@@ -1794,7 +1786,7 @@ sub peel_order ($box_in) {
             foreach my $d (0 .. 3) {
                 my $q = $N{$p}[$d];
                 next if !$box{$q} or $seen{$q};
-                my $behind = $N{$p}[ $d ^ 2 ];
+                my $behind = $N{$p}[$d ^ 2];
                 next if $Wall{$behind} or $box{$behind};
                 $seen{$q} = 1;
                 push @next, $q;
@@ -1807,16 +1799,15 @@ sub peel_order ($box_in) {
                 $seen{$far} = 1;
                 push @next, $far;
             }
-        }
+        } ## end foreach my $p (@current)
         @current = @next;
-    }
+    } ## end while (@current)
     return \%order;
-}
+} ## end sub peel_order
 
 # ---------------------------------------------------------------------------
 # What only a search can tell about the level
 # ---------------------------------------------------------------------------
-
 # blocks{p}{blocker} = how many goals a box on p LOSES when another box stands
 # on the blocker's cell and never moves -- of the goals it could be brought to
 # on an empty board; and completely{p}{blocker} = 1 when it loses all of them.
@@ -1833,13 +1824,13 @@ sub peel_order ($box_in) {
 # changes, are worked out once per blocker and shared by all the questions.
 sub blocking () {
     my @cells = sort {$a <=> $b} grep {!$Impossible{$_} and !$Goal{$_}} keys %Floor;
-    my $empty = {'box' => {}, 'frozen' => {}, 'reach' => {}};
+    my $empty = { 'box' => {}, 'frozen' => {}, 'reach' => {} };
     my (%goals_from, %blocks, %completely, %side0);
     foreach my $p (@cells) {
         $goals_from{$p} = grep {$Goal{$_}} keys %{ box_spread($empty, [$p], 0, 0, \%side0) };
     }
     foreach my $blocker (@cells) {
-        my $view = {'box' => {}, 'frozen' => {$blocker => 1}, 'reach' => {}};
+        my $view = { 'box' => {}, 'frozen' => { $blocker => 1 }, 'reach' => {} };
         my %side;
         foreach my $p (@cells) {
             next if $p == $blocker;
@@ -1849,7 +1840,7 @@ sub blocking () {
         }
     }
     return (\%blocks, \%completely);
-}
+} ## end sub blocking
 
 # The forbidden pairs: two cells such that boxes standing on both can never
 # both be brought home, whatever else is on the board.  Found by trying -- the
@@ -1878,26 +1869,25 @@ sub forbidden_pairs () {
     return {} if keys %Start == 1;
     my @rules = @Envelope;
     @Envelope = ();    # they are worked out after the pairs, with their help
-
     my (undef, $completely) = blocking();
     my @cells = sort {$a <=> $b} grep {!$Impossible{$_} and !$Tunnel_push{$_}} keys %Floor;
     foreach my $i (0 .. $#cells - 1) {
         my $c1 = $cells[$i];
         foreach my $c2 (@cells[$i + 1 .. $#cells]) {
             next if !$completely->{$c1}{$c2} or !$completely->{$c2}{$c1};
-            my $v = {'box' => {$c1 => 1, $c2 => 1}, 'frozen' => {}, 'reach' => {}};
+            my $v = { 'box' => { $c1 => 1, $c2 => 1 }, 'frozen' => {}, 'reach' => {} };
             next if $Goal{$c1} and $Goal{$c2};
             next if @{ (regions($v))[1] } > 1;
             next if side_by_side_on_a_wall($c1, $c2);
             next if pattern_dead($v, $c1, 0) or pattern_dead($v, $c2, 0);
-            $v->{'reach'} = {map {$_ => 1} grep {$_ != $c1 and $_ != $c2} keys %Floor};
+            $v->{'reach'} = { map {$_ => 1} grep {$_ != $c1 and $_ != $c2} keys %Floor };
             next if can_be_packed($v, 100);
             $Mpdb{$c1}{$c2} = $Mpdb{$c2}{$c1} = 1;
         }
     }
     @Envelope = @rules;
     return {%Mpdb};
-}
+} ## end sub forbidden_pairs
 
 # Are these boxes stuck for a PULL search -- can they not all be pulled free?
 # 1 = stuck, and that is a proof; 0 = they can; 2 = gave up.
@@ -1922,41 +1912,43 @@ sub forbidden_pairs () {
 # average more than 500 are in use from N = 687 on, and that is the number used
 # here.  It can only matter to a search that is about to give up anyway.
 sub stuck_for_pulling ($start) {
-    my $home   = sub ($view) {!grep {!$Start{$_}} keys %{ $view->{'box'} }};
+    my $home = sub ($view) {!grep {!$Start{$_}} keys %{ $view->{'box'} }};
     return 0 if $home->($start);
-    my $result = small_search({
-        'start'    => $start,
-        'max'      => 500,
-        'solved'   => $home,
-        'finished' => sub ($view) {$view->{'reach'}{$Sok0} and $home->($view)},
-        'better'   => sub ($son, $best) {
-            return $son->{'boxes'} < $best->{'boxes'}     if $son->{'boxes'} != $best->{'boxes'};
-            return $son->{'regions'} < $best->{'regions'} if $son->{'regions'} != $best->{'regions'};
-            return $son->{'packed'} > $best->{'packed'};
-        },
-        'look' => sub ($open) {
-            my %outcome = map {$_->{'key'} => 1} map {@{ $_->{'sons'} }} @$open;
-            return keys %outcome >= 687 ? 'unknown' : '';
-        },
-        'moves' => sub ($view) {
-            my ($moves) = possible_moves($view, 1, {});
-            my %by_box;
-            push @{ $by_box{ $_->{'from'} } }, $_ foreach @$moves;
-            foreach my $from (sort {$a <=> $b} keys %by_box) {
-                my ($along_row, $along_column) = (0, 0);
-                foreach my $m (@{ $by_box{$from} }) {
-                    next if !apply($view, $m)->{'reach'}{$from};
-                    $along_column = 1 if int($m->{'to'} / $Width) != int($from / $Width);
-                    $along_row    = 1 if $m->{'to'} % $Width != $from % $Width;
+    my $result = small_search(
+        {
+            'start'    => $start,
+            'max'      => 500,
+            'solved'   => $home,
+            'finished' => sub ($view) {$view->{'reach'}{$Sok0} and $home->($view)},
+            'better'   => sub ($son, $best) {
+                return $son->{'boxes'} < $best->{'boxes'}     if $son->{'boxes'} != $best->{'boxes'};
+                return $son->{'regions'} < $best->{'regions'} if $son->{'regions'} != $best->{'regions'};
+                return $son->{'packed'} > $best->{'packed'};
+            },
+            'look' => sub ($open) {
+                my %outcome = map {$_->{'key'} => 1} map {@{ $_->{'sons'} }} @$open;
+                return keys %outcome >= 687 ? 'unknown' : '';
+            },
+            'moves' => sub ($view) {
+                my ($moves) = possible_moves($view, 1, {});
+                my %by_box;
+                push @{ $by_box{ $_->{'from'} } }, $_ foreach @$moves;
+                foreach my $from (sort {$a <=> $b} keys %by_box) {
+                    my ($along_row, $along_column) = (0, 0);
+                    foreach my $m (@{ $by_box{$from} }) {
+                        next if !apply($view, $m)->{'reach'}{$from};
+                        $along_column = 1 if int($m->{'to'} / $Width) != int($from / $Width);
+                        $along_row    = 1 if $m->{'to'} % $Width != $from % $Width;
+                    }
+                    next if !$along_row or !$along_column;
+                    return [{ 'from' => $from, 'to' => $from, 'man' => $from, 'pull' => 1, 'kill' => 1 }];
                 }
-                next if !$along_row or !$along_column;
-                return [{'from' => $from, 'to' => $from, 'man' => $from, 'pull' => 1, 'kill' => 1}];
-            }
-            return $moves;
-        },
-    });
-    return {'solved' => 0, 'dead' => 1, 'unknown' => 2}->{$result};
-}
+                return $moves;
+            },
+        }
+    );
+    return { 'solved' => 0, 'dead' => 1, 'unknown' => 2 }->{$result};
+} ## end sub stuck_for_pulling
 
 # The forbidden pairs of a pull search: two cells such that boxes on both can
 # never both be pulled free.  Only pairs that could plausibly be one are tried:
@@ -1978,17 +1970,17 @@ sub forbidden_pull_pairs () {
             next if $dy and $dx;
             my $apart = $dy + $dx;
             next if $apart == 1 or $apart >= 10 or ($Walk{$c1}{$c2} // -1) != $apart;
-            my $v = {'box' => {$c1 => 1, $c2 => 1}, 'frozen' => {}, 'reach' => {}};
+            my $v = { 'box' => { $c1 => 1, $c2 => 1 }, 'frozen' => {}, 'reach' => {} };
             next if in_the_open($v, $c1) and in_the_open($v, $c2);
-            next if $Start{$c1} and $Start{$c2};
+            next if $Start{$c1}          and $Start{$c2};
             next if @{ (regions($v))[1] } > 1;
-            $v->{'reach'} = {map {$_ => 1} grep {$_ != $c1 and $_ != $c2} keys %Floor};
+            $v->{'reach'} = { map {$_ => 1} grep {$_ != $c1 and $_ != $c2} keys %Floor };
             next if stuck_for_pulling($v) != 1;
             $Pull_mpdb{$c1}{$c2} = $Pull_mpdb{$c2}{$c1} = 1;
         }
-    }
+    } ## end foreach my $i (0 .. $#cells...)
     return {%Pull_mpdb};
-}
+} ## end sub forbidden_pull_pairs
 
 # Two free cells in a row beyond the box, in all four directions?
 sub in_the_open ($v, $p) {
@@ -2028,11 +2020,10 @@ sub in_the_open ($v, $p) {
 # three board builders round them
 sub envelope_rules () {
     @Envelope = ();
-    my $solved = {'box' => {%Goal}, 'frozen' => {}};
+    my $solved = { 'box' => {%Goal}, 'frozen' => {} };
     my (undef, $pieces) = regions($solved);
     return [] if @$pieces < 2;
     my $nfloor = keys %Floor;
-
     foreach my $piece (@$pieces) {
         my %inside = map {$_ => 1} @$piece;
         my (@beside, @corner, %taken);
@@ -2043,7 +2034,6 @@ sub envelope_rules () {
             push @corner, grep {$Goal{$_} and !$taken{$_}++} @{ $N8{$p} };
         }
         next if @$piece > $nfloor / 2 or @corner >= 8;
-
         foreach my $count (0 .. @corner) {
             foreach my $choice (0 .. 2**@corner - 1) {
                 my @chosen = grep {$choice >> $_ & 1} 0 .. $#corner;
@@ -2061,23 +2051,23 @@ sub envelope_rules () {
                 next if $covered;
 
                 # from every region outside the piece
-                my $v = {'box' => \%box, 'frozen' => {}};
+                my $v = { 'box' => \%box, 'frozen' => {} };
                 my ($region, $cells_of) = regions($v);
                 my $within = $region->{ $piece->[-1] };
                 my $can    = 0;
                 foreach my $id (grep {$_ != $within} 0 .. $#$cells_of) {
                     my %there = map {$_ => 1} @{ $cells_of->[$id] };
-                    next if !can_be_packed({%$v, 'reach' => \%there}, 100);    # 0 is the only "no"
+                    next if !can_be_packed({ %$v, 'reach' => \%there }, 100);    # 0 is the only "no"
                     $can = 1;
                     last;
                 }
                 next if $can;
-                push @Envelope, {'box' => [sort {$a <=> $b} keys %box], 'allowed' => \%outside};
-            }
-        }
-    }
+                push @Envelope, { 'box' => [sort {$a <=> $b} keys %box], 'allowed' => \%outside };
+            } ## end foreach my $choice (0 .. 2**...)
+        } ## end foreach my $count (0 .. @corner)
+    } ## end foreach my $piece (@$pieces)
     return [@Envelope];
-}
+} ## end sub envelope_rules
 
 # Everything above, in the order the original runs it: the pairs with no rules
 # in force, the pull pairs, then the envelope rules with the pairs to help.
@@ -2090,7 +2080,7 @@ sub search_analysis () {
     my $pairs = forbidden_pairs();
     my $pull  = forbidden_pull_pairs();
     my $rules = envelope_rules();
-    return {'mpdb' => $pairs, 'pull_mpdb' => $pull, 'envelope' => $rules, 'snail' => snail_analysis()};
+    return { 'mpdb' => $pairs, 'pull_mpdb' => $pull, 'envelope' => $rules, 'snail' => snail_analysis() };
 }
 
 # Do the two boxes share a 2x2 block whose other two cells are walls?  That is
@@ -2103,17 +2093,15 @@ sub side_by_side_on_a_wall ($c1, $c2) {
     my $ring = $N8{$c1};
     foreach my $k (1, 3, 5, 7) {
         my @rest = @$ring[$k - 1, $k, ($k + 1) & 7];
-        next if 1 != grep {$_ == $c2} @rest;
+        next     if 1 != grep {$_ == $c2} @rest;
         return 1 if 2 == grep {$Wall{$_}} @rest;
     }
     return 0;
 }
 
-
 # ---------------------------------------------------------------------------
 # What the modes need of the level
 # ---------------------------------------------------------------------------
-
 # goals_away{p} = the pushes from p to EVERY goal, added up (a goal out of
 # reach adds nothing) -- how far a box on p is from the goals all together.
 # The backward searches of BASE, of the HF family and of REV score a position
@@ -2139,7 +2127,7 @@ sub goals_away () {
 # was: init_scored_distance (Festival.pm:3356), the push half, over
 # get_distance_from_targets (2689)
 sub goals_near () {
-    return box_spread({'box' => {}, 'frozen' => {}}, [keys %Goal], 1);
+    return box_spread({ 'box' => {}, 'frozen' => {} }, [keys %Goal], 1);
 }
 
 # What the value is normalised by: the pulls from the goals, cell by cell;
@@ -2172,7 +2160,7 @@ sub snail_analysis () {
     my ($target, $hardest) = (undef, -1);
     foreach my $goal (sort {$a <=> $b} keys %Goal) {
         next if $Start{$goal};
-        my $depth = peel_order({%home, $goal => 1})->{$goal};
+        my $depth = peel_order({ %home, $goal => 1 })->{$goal};
         ($target, $hardest) = ($goal, $depth) if $depth > $hardest;
     }
     my $t = $target // 0;
@@ -2206,14 +2194,13 @@ sub snail_analysis () {
         my $from_far = $bfs->($far);
         %dist = map {$_ => $len - $from_far->{$_}} keys %$from_far;
         $len++;
-    }
-    return {'kind' => $kind, 'target' => $t, 'depth' => $hardest, 'dist' => \%dist, 'len' => $len // 0, 'grid' => \%grid};
-}
+    } ## end if ($kind eq 'snail')
+    return { 'kind' => $kind, 'target' => $t, 'depth' => $hardest, 'dist' => \%dist, 'len' => $len // 0, 'grid' => \%grid };
+} ## end sub snail_analysis
 
 # ---------------------------------------------------------------------------
 # The level, handed over
 # ---------------------------------------------------------------------------
-
 # INSTALL A LEVEL: this module's variables filled from the Parser's hash and
 # from $g -- geometry()'s result, without the products of the analysis, which
 # search_analysis() finds next (prepare).
@@ -2232,28 +2219,28 @@ sub install ($gm, $g) {
     %Goal  = map {$_ => 1} @{ $gm->{'goal'} };
     %Start = map {$_ => 1} @{ $gm->{'baggage'} };
     $Sok0  = $gm->{'player'};
-    $Width = $gm->{'w'};    # for "same row / same column", and for the one test that looks past a run's last cell
+    $Width = $gm->{'w'};        # for "same row / same column", and for the one test that looks past a run's last cell
 
     # from the level record
-    %Cp          = %{ $g->{'cp'}          // {} };
-    %D           = %{ $g->{'d'}           // {} };
-    %Goal_hole   = %{ $g->{'goal_hole'}   // {} };
-    %Impossible  = %{ $g->{'impossible'}  // {} };
-    %Mpdb        = %{ $g->{'mpdb'}        // {} };
+    %Cp          = %{ $g->{'cp'}         // {} };
+    %D           = %{ $g->{'d'}          // {} };
+    %Goal_hole   = %{ $g->{'goal_hole'}  // {} };
+    %Impossible  = %{ $g->{'impossible'} // {} };
+    %Mpdb        = %{ $g->{'mpdb'}       // {} };
     %N           = %{ $g->{'n'} };
     %N8          = %{ $g->{'n8'} };
-    %Pattern     = %{ $g->{'pattern'}     // {} };
-    %Pattern_at  = %{ $g->{'pattern_at'}  // {} };
-    %Pull_mpdb   = %{ $g->{'pull_mpdb'}   // {} };
-    %Room        = %{ $g->{'room'}        // {} };
-    @Room_area   = @{ $g->{'room_area'}   // [] };
-    $Snail       = $g->{'snail'};    # the chain analysis (snail_analysis), or nothing
+    %Pattern     = %{ $g->{'pattern'}    // {} };
+    %Pattern_at  = %{ $g->{'pattern_at'} // {} };
+    %Pull_mpdb   = %{ $g->{'pull_mpdb'}  // {} };
+    %Room        = %{ $g->{'room'}       // {} };
+    @Room_area   = @{ $g->{'room_area'}  // [] };
+    $Snail       = $g->{'snail'};       # the chain analysis (snail_analysis), or nothing
     %Side        = %{ $g->{'side'} };
     %Tunnel_pull = %{ $g->{'tunnel_pull'} // {} };
     %Tunnel_push = %{ $g->{'tunnel_push'} // {} };
     %Walk        = %{ $g->{'walk'}        // {} };
     %Wall        = %{ $g->{'wall'} };
-    @Envelope    = @{ $g->{'envelope'}    // [] };
+    @Envelope    = @{ $g->{'envelope'} // [] };
 
     # the caches of the copies below
     %Base_landing = ();
@@ -2266,9 +2253,9 @@ sub install ($gm, $g) {
     %Goals_away   = %{ goals_away() };
     %Goals_near   = %{ goals_near() };
     $Girl_context = girl_context();
-    $Room_links0  = room_links({'box' => {}, 'frozen' => {}});
+    $Room_links0  = room_links({ 'box' => {}, 'frozen' => {} });
     return;
-}
+} ## end sub install
 
 # THE RECORD of the level now installed: every variable above under its own
 # name in lower case, and the stamp.  Everything the engine reads, and nothing
@@ -2311,7 +2298,7 @@ sub record () {
         'girl_context' => $Girl_context,
         'room_links0'  => $Room_links0,
     };
-}
+} ## end sub record
 
 # PREPARE A LEVEL, ALL OF IT, and hand back its record: the geometry,
 # installed, then what only a search can find -- which needs the geometry
@@ -2323,5 +2310,63 @@ sub prepare ($gm) {
     $Snail = search_analysis()->{'snail'};
     return record();
 }
-
 1;
+__END__
+
+=head1 NAME
+
+Games::Sokoban::Solver::Fest::Analysis - the level, prepared for the Fest engine as one record
+
+=head1 SYNOPSIS
+
+    use Games::Sokoban::Solver::Fest::Analysis ();
+
+    my $record = Games::Sokoban::Solver::Fest::Analysis::prepare(\%game);           # the Parser's analysis hash
+    my $blob   = Games::Sokoban::Solver::Fest::Analysis::analysis_record($record);  # what Fest::solve takes
+
+=head1 DESCRIPTION
+
+Everything L<Games::Sokoban::Solver::Fest> needs to know about a level before
+any search starts, worked out of the analysis of
+L<Games::Sokoban::Solver::Parser> and packed into one self-contained record:
+the maps read off the shape, the forbidden pairs, pull pairs and envelope
+rules that only a search can find, the chain verdict, and the per-level
+tables the modes used to compute at every run. The engine reads nothing but
+the record and does not load this module.
+
+This is Games::Sokoban::FestDev 1.00 of the Sokoban project; about five
+seconds on a large level, without a budget.
+
+=head1 FUNCTIONS
+
+=head2 prepare
+
+    my $record = prepare(\%game);
+
+The record as a hash. Dies on a level with floor on the rim of its rectangle
+(L<Games::Sokoban::Solver::Level> rings such a level first).
+
+=head2 analysis_record
+
+    my $blob = analysis_record($record);
+
+C<compress(nfreeze(...))>, stamped with C<$ANALYSIS_STAMP>; the engine
+refuses a record with another stamp.
+
+=head1 SEE ALSO
+
+L<Games::Sokoban::Solver::Fest>, L<Games::Sokoban::Solver>.
+
+=head1 AUTHOR
+
+Jiri Broz, E<lt>jiri.krobot.broz@gmail.comE<gt>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2026 by Jiri Broz
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.42.2 or,
+at your option, any later version of Perl 5 you may have available.
+
+=cut

@@ -1,41 +1,44 @@
 #!/usr/bin/env perl
-
 # soko-solver.pl -- solve the levels of a file: a first solution by a race of
 # search modes, then the shortest one. The whole program is the facade
 # Games::Sokoban::Solver driven from the command line; what it adds is the
 # settings (the ini file and its questions), the pool made once for the run,
 # the formats of the output, the lines on STDERR, Ctrl+C and the exit status.
 # Everything below __END__ is its documentation (--help prints it).
-
 use v5.42;
 use warnings FATAL => 'uninitialized';
 no warnings 'once';
-use Getopt::Long ();
-use Pod::Usage   ();
-use POSIX        ();
-use Time::HiRes  ();
-use Games::Sokoban::Solver ();
+use Getopt::Long                      ();
+use Pod::Usage                        ();
+use POSIX                             ();
+use Time::HiRes                       ();
+use Games::Sokoban::Solver            ();
 use Games::Sokoban::Solver::Config    ();
 use Games::Sokoban::Solver::Portfolio ();
 use Games::Sokoban::Solver::Level     ();
 use Games::Sokoban::Solver::Memory    ();
-
 our $VERSION = $Games::Sokoban::Solver::VERSION;
 
 # --- the options -----------------------------------------------------------------
 my %o = ('blok' => undef, 'band' => 2, 'format' => undef, 'out' => undef, 'level' => undef, 'modes' => undef, 'engines' => undef);
 Getopt::Long::Configure('bundling', 'no_ignore_case');
 Getopt::Long::GetOptions(
-    \%o,          'time|limit=f',  'jobs=i',           'no-threads',          'modes=s',      'engines=s',
-    'pull=i',     'forward=i',     'hold=f',           'maxgb=f',             'blok-budget=f', 'fest-budget=f',
-    'blok=i',     'optimal=f',     'optimal-mode=s',   'band=i',              'berkeley=i',   'berkeley-root=s',
-    'berkeley-cache=f', 'berkeley-from=f', 'ini=s',    'init',                'no-ini',       'level=s',
-    'format=s',   'out=s',         'show',             'quiet|q',             'verbose|v',    'version|V',
+    \%o,                'time|limit=f',    'jobs=i',         'no-threads', 'modes=s',       'engines=s',
+    'pull=i',           'forward=i',       'hold=f',         'maxgb=f',    'blok-budget=f', 'fest-budget=f',
+    'blok=i',           'optimal=f',       'optimal-mode=s', 'band=i',     'berkeley=i',    'berkeley-root=s',
+    'berkeley-cache=f', 'berkeley-from=f', 'ini=s',          'init',       'no-ini',        'level=s',
+    'format=s',         'out=s',           'show',           'quiet|q',    'verbose|v',     'version|V',
     'help|h|?',
-) or Pod::Usage::pod2usage('-exitval' => 2, '-verbose' => 0);
+    )
+    or Pod::Usage::pod2usage('-exitval' => 2, '-verbose' => 0);
 Pod::Usage::pod2usage('-exitval' => 0, '-verbose' => 2, '-noperldoc' => 1) if $o{'help'};
-if ($o{'version'}) { say "soko-solver.pl $VERSION (Games::Sokoban::Solver)"; exit 0 }
-Pod::Usage::pod2usage('-exitval' => 2, '-verbose' => 0, '-message' => 'soko-solver.pl: no level file given (use - for standard input)') unless @ARGV;
+if ($o{'version'}) {say "soko-solver.pl $VERSION (Games::Sokoban::Solver)"; exit 0}
+Pod::Usage::pod2usage(
+    '-exitval' => 2,
+    '-verbose' => 0,
+    '-message' => 'soko-solver.pl: no level file given (use - for standard input)'
+    )
+    unless @ARGV;
 
 # --- the settings: defaults < ini < command line -----------------------------------
 my %cli = (
@@ -69,127 +72,158 @@ my %cfg = eval {
     }
     Games::Sokoban::Solver::Config::resolve(\%cli, 'ini' => $ini, 'no_ini' => $o{'no-ini'} // 0);
 };
-unless (%cfg) { print {*STDERR} "soko-solver.pl: $@"; exit 2 }
-
+unless (%cfg) {print {*STDERR} "soko-solver.pl: $@"; exit 2}
 my $serial  = ($o{'no-threads'} or $cfg{'jobs'} <= 1 or $o{'verbose'}) ? 1 : 0;
-my $jobs    = $serial ? 1 : $cfg{'jobs'};
-my $quiet   = $o{'quiet'}   ? 1 : 0;
-my $verbose = $o{'verbose'} ? 1 : 0;
+my $jobs    = $serial                                                  ? 1 : $cfg{'jobs'};
+my $quiet   = $o{'quiet'}                                              ? 1 : 0;
+my $verbose = $o{'verbose'}                                            ? 1 : 0;
 my %caps    = ('pull' => $cfg{'pull'}, 'forward' => $cfg{'forward'});
 for my $mode ($cfg{'optimal_mode'}) {
-    die "soko-solver.pl: --optimal-mode must be DIAL, ASTAR or FIFO\n" unless grep { $_ eq $mode } Games::Sokoban::Solver::Portfolio::solver_modes();
+    die "soko-solver.pl: --optimal-mode must be DIAL, ASTAR or FIFO\n"
+        unless grep {$_ eq $mode} Games::Sokoban::Solver::Portfolio::solver_modes();
 }
 
 # The modes of the race: the order of the Portfolio, cut down by --modes and
 # --engines; the analyses built are those the modes left need.
 my %engine_of = ('firstbet' => 'Firstbet', 'firstback' => 'FirstBack', 'festival' => 'Festival', 'fest' => 'Fest');
-my @modes = Games::Sokoban::Solver::Portfolio::race_order();
+my @modes     = Games::Sokoban::Solver::Portfolio::race_order();
 if (defined $o{'engines'}) {
     my %on;
     for my $e (split /,/, lc $o{'engines'}) {
         die "soko-solver.pl: --engines: '$e' is none of " . join(', ', sort keys %engine_of) . "\n" unless $engine_of{$e};
-        $on{ "Games::Sokoban::Solver::$engine_of{$e}" } = 1;
+        $on{"Games::Sokoban::Solver::$engine_of{$e}"} = 1;
     }
-    @modes = grep { $on{ Games::Sokoban::Solver::Portfolio::engine_for($_) } } @modes;
+    @modes = grep {$on{ Games::Sokoban::Solver::Portfolio::engine_for($_) }} @modes;
 }
 if (defined $o{'modes'}) {
-    my %known = map { $_ => 1 } Games::Sokoban::Solver::Portfolio::all_modes();
+    my %known = map {$_ => 1} Games::Sokoban::Solver::Portfolio::all_modes();
     my @asked = split /,/, uc $o{'modes'};
-    for (@asked) { die "soko-solver.pl: --modes: '$_' is no mode (see --help)\n" unless $known{$_} }
-    my %asked = map { $_ => 1 } @asked;
-    @modes = grep { $asked{$_} } @modes;
+    for (@asked) {die "soko-solver.pl: --modes: '$_' is no mode (see --help)\n" unless $known{$_}}
+    my %asked = map {$_ => 1} @asked;
+    @modes = grep {$asked{$_}} @modes;
 }
 die "soko-solver.pl: no mode is left to run\n" unless @modes;
-my %want = ('game' => 1, map { Games::Sokoban::Solver::Portfolio::blob_for($_) => 1 } @modes);
+my %want = ('game' => 1, map {Games::Sokoban::Solver::Portfolio::blob_for($_) => 1} @modes);
 
 # --- the levels ------------------------------------------------------------------
 my @work;    # [file, level]
 for my $file (@ARGV) {
     my $text;
-    if ($file eq '-') { $text = do { local $/; <STDIN> } // '' }
+    if ($file eq '-') {$text = do {local $/; <STDIN>} // ''}
     else {
-        open(my $fh, '<', $file) or do { print {*STDERR} "soko-solver.pl: cannot read $file: $!\n"; exit 2 };
-        $text = do { local $/; <$fh> };
+        open(my $fh, '<', $file) or do {print {*STDERR} "soko-solver.pl: cannot read $file: $!\n"; exit 2};
+        $text = do {local $/; <$fh>};
         close $fh;
     }
     my @levels = Games::Sokoban::Solver::read_levels($text);
-    unless (@levels) { print {*STDERR} "soko-solver.pl: no level in $file\n"; exit 2 }
-    if (defined $o{'level'}) {
+    unless (@levels) {print {*STDERR} "soko-solver.pl: no level in $file\n"; exit 2}
+    if     (defined $o{'level'}) {
         my %pick;
         for my $part (split /,/, $o{'level'}) {
-            if    ($part =~ /\A(\d+)-(\d+)\z/) { $pick{$_} = 1 for $1 .. $2 }
-            elsif ($part =~ /\A(\d+)\z/)       { $pick{$1} = 1 }
-            else { print {*STDERR} "soko-solver.pl: --level takes numbers and ranges, not '$part'\n"; exit 2 }
+            if    ($part =~ /\A(\d+)-(\d+)\z/) {$pick{$_} = 1 for $1 .. $2}
+            elsif ($part =~ /\A(\d+)\z/)       {$pick{$1} = 1}
+            else {print {*STDERR} "soko-solver.pl: --level takes numbers and ranges, not '$part'\n"; exit 2}
         }
-        @levels = grep { $pick{ $_->{'index'} } } @levels;
+        @levels = grep {$pick{ $_->{'index'} }} @levels;
     }
-    push @work, map { [$file, $_] } @levels;
-}
-unless (@work) { print {*STDERR} "soko-solver.pl: --level picked no level\n"; exit 2 }
-
+    push @work, map {[$file, $_]} @levels;
+} ## end for my $file (@ARGV)
+unless (@work) {print {*STDERR} "soko-solver.pl: --level picked no level\n"; exit 2}
 my $out;
 if (defined $o{'out'}) {
-    open($out, '>', $o{'out'}) or do { print {*STDERR} "soko-solver.pl: cannot write $o{'out'}: $!\n"; exit 2 };
+    open($out, '>', $o{'out'}) or do {print {*STDERR} "soko-solver.pl: cannot write $o{'out'}: $!\n"; exit 2};
 }
 my $format = $cfg{'format'};
 my $json;
-if ($format eq 'json') { require JSON::PP; $json = JSON::PP->new->canonical->ascii }
+if ($format eq 'json') {require JSON::PP; $json = JSON::PP->new->canonical->ascii}
 
 sub emit ($line) {
     print {*STDOUT} $line, "\n";
-    print {$out} $line, "\n" if $out;
+    print {$out} $line,    "\n" if $out;
     return;
 }
-sub info (@text) { print {*STDERR} @text, "\n" unless $quiet; return }
+sub info (@text) {print {*STDERR} @text, "\n" unless $quiet; return}
 
 # --- the pool, once for the run ----------------------------------------------------
 STDOUT->autoflush(1);
 STDERR->autoflush(1);    # a thread's clone of STDERR is buffered and would cut lines in half
-my $berk_race = ($cfg{'berkeley'} and $cfg{'time'} >= $cfg{'berkeley_from'})    ? 1 : 0;
+my $berk_race = ($cfg{'berkeley'} and $cfg{'time'} >= $cfg{'berkeley_from'}) ? 1 : 0;
 my $berk_best = ($cfg{'berkeley'} and $cfg{'optimal'} > 0 and $cfg{'optimal'} >= $cfg{'berkeley_from'}) ? 1 : 0;
 my %berk      = ('root' => $cfg{'berkeley_root'}, 'cache_gb' => $cfg{'berkeley_cache'});
 my $pool      = eval {
     Games::Sokoban::Solver::pool(
-        'jobs' => $jobs, 'serial' => $serial, 'max_gb' => $cfg{'maxgb'}, 'quiet' => ($verbose ? 0 : 2),
+        'jobs'   => $jobs,
+        'serial' => $serial,
+        'max_gb' => $cfg{'maxgb'},
+        'quiet'  => ($verbose ? 0 : 2),
         ($berk_race ? ('berkeley' => \%berk) : ()),
     );
 };
-unless ($pool) { (my $why = "$@") =~ s/\n.*//s; print {*STDERR} "soko-solver.pl: $why\n"; exit 2 }
-emit('# ' . join("\t", qw(level title status moves pushes forced proved first_mode first_s optimal_mode optimal_s path))) if $format eq 'report';
-
-info(sprintf 'soko-solver.pl %s: %d level%s, %d mode%s, %s s a mode, %s s the proof (%s), %s, memory probe %s%s%s',
-    $VERSION, scalar @work, (@work == 1 ? '' : 's'), scalar @modes, (@modes == 1 ? '' : 's'), $cfg{'time'},
-    ($cfg{'optimal'} > 0 ? $cfg{'optimal'} : 'no'), $cfg{'optimal_mode'},
+unless ($pool) {(my $why = "$@") =~ s/\n.*//s; print {*STDERR} "soko-solver.pl: $why\n"; exit 2}
+emit('# ' . join("\t", qw(level title status moves pushes forced proved first_mode first_s optimal_mode optimal_s path)))
+    if $format eq 'report';
+info(
+    sprintf 'soko-solver.pl %s: %d level%s, %d mode%s, %s s a mode, %s s the proof (%s), %s, memory probe %s%s%s',
+    $VERSION,
+    scalar @work,
+    (@work == 1 ? '' : 's'),
+    scalar @modes,
+    (@modes == 1 ? '' : 's'),
+    $cfg{'time'},
+    ($cfg{'optimal'} > 0 ? $cfg{'optimal'} : 'no'),
+    $cfg{'optimal_mode'},
     ($pool->threaded ? "$jobs threads" : 'one task at a time, no threads'),
-    Games::Sokoban::Solver::Memory::scope(), ($cfg{'maxgb'} ? ", ceiling $cfg{'maxgb'} GB" : ''),
-    ($berk_race || $berk_best ? ", BerkeleyDB stores under $cfg{'berkeley_root'}" : ''));
-info(sprintf '  a level takes up to about %d s: %d modes x %s s / %d + the analyses + up to 2 x %s s for the proof',
-    (@modes * $cfg{'time'} / $jobs + 2 * $cfg{'optimal'}), scalar @modes, $cfg{'time'}, $jobs, $cfg{'optimal'}) unless $quiet;
+    Games::Sokoban::Solver::Memory::scope(),
+    ($cfg{'maxgb'}            ? ", ceiling $cfg{'maxgb'} GB"                      : ''),
+    ($berk_race || $berk_best ? ", BerkeleyDB stores under $cfg{'berkeley_root'}" : '')
+);
+info(
+    sprintf '  a level takes up to about %d s: %d modes x %s s / %d + the analyses + up to 2 x %s s for the proof',
+    (@modes * $cfg{'time'} / $jobs + 2 * $cfg{'optimal'}),
+    scalar @modes,
+    $cfg{'time'}, $jobs, $cfg{'optimal'}
+    )
+    unless $quiet;
 
 # --- Ctrl+C: the first stops the level in hand and skips the rest, the second ends at once
 my ($Stop, $Label) = (0, undef);
 my %stop_flag;
 $SIG{'INT'} = sub {
-    if ($Stop++) { print {*STDERR} "\nsoko-solver.pl: stopped\n"; POSIX::_exit(130) }
-    print {*STDERR} "\nsoko-solver.pl: interrupted -- the level in hand is being stopped, the rest skipped (Ctrl+C again ends at once)\n";
-    if (defined $Label) { $pool->stop($Label); $stop_flag{$Label} = 1 }
+    if ($Stop++) {print {*STDERR} "\nsoko-solver.pl: stopped\n"; POSIX::_exit(130)}
+    print {*STDERR}
+        "\nsoko-solver.pl: interrupted -- the level in hand is being stopped, the rest skipped (Ctrl+C again ends at once)\n";
+    if (defined $Label) {$pool->stop($Label); $stop_flag{$Label} = 1}
 };
 
 # --- the levels, one after another -------------------------------------------------
 my %tally = ('SOLVED' => 0, 'UNSOLVED' => 0, 'REFUSED' => 0, 'proved' => 0);
-my $exit = 0;
-my $n    = 0;
+my $exit  = 0;
+my $n     = 0;
 my $t_run = Time::HiRes::time();
 for my $w (@work) {
     my ($file, $level) = @$w;
     ++$n;
-    if ($Stop) { say_level_result($level, { 'status' => 'UNSOLVED', 'reason' => 'skipped after the interrupt' }); ++$tally{'UNSOLVED'}; $exit ||= 1; next }
+    if ($Stop) {
+        say_level_result($level, { 'status' => 'UNSOLVED', 'reason' => 'skipped after the interrupt' });
+        ++$tally{'UNSOLVED'};
+        $exit ||= 1;
+        next;
+    }
     my $tag = sprintf '[%d/%d] "%s"', $n, scalar @work, $level->{'title'};
     my $t0  = Time::HiRes::time();
 
     # prepare
-    my $p = eval { Games::Sokoban::Solver::prepare('rows' => $level, 'blok_budget' => $cfg{'blok_budget'}, 'fest_budget' => $cfg{'fest_budget'},
-            'want' => [keys %want], 'lazy' => 1, 'pool' => $pool, 'on_note' => sub ($t) { info("  note: $t") if $verbose }) };
+    my $p = eval {
+        Games::Sokoban::Solver::prepare(
+            'rows'        => $level,
+            'blok_budget' => $cfg{'blok_budget'},
+            'fest_budget' => $cfg{'fest_budget'},
+            'want'        => [keys %want],
+            'lazy'        => 1,
+            'pool'        => $pool,
+            'on_note'     => sub ($t) {info("  note: $t") if $verbose}
+        );
+    };
     unless ($p) {
         my $why = "$@";
         if ($why =~ /\AREFUSED:/) {
@@ -204,44 +238,69 @@ for my $w (@work) {
         exit 3;
     }
     $Label = $p->{'label'};
-    info(sprintf '%s  %dx%d  %d box%s  %d cells%s', $tag, $p->{'w'}, $p->{'h'}, $p->{'nbox'}, ($p->{'nbox'} == 1 ? '' : 'es'), $p->{'ncell'},
-        (length $p->{'firststep'} ? sprintf(', a forced opening of %d letters', length $p->{'firststep'}) : ''));
-    if ($o{'show'}) { print {*STDERR} Games::Sokoban::Solver::Level::as_text($p->{'code1'}) }
-
+    info(
+        sprintf '%s  %dx%d  %d box%s  %d cells%s',
+        $tag, $p->{'w'}, $p->{'h'}, $p->{'nbox'}, ($p->{'nbox'} == 1 ? '' : 'es'),
+        $p->{'ncell'}, (length $p->{'firststep'} ? sprintf(', a forced opening of %d letters', length $p->{'firststep'}) : '')
+    );
+    if ($o{'show'}) {print {*STDERR} Games::Sokoban::Solver::Level::as_text($p->{'code1'})}
     my %r = ('status' => 'SOLVED', 'prepared' => $p);
     if ($p->{'solved_by_opening'}) {
         info('  the forced opening alone solves the level');
-        $r{'proved'} = 1;
+        $r{'proved'}      = 1;
         $r{'engine_path'} = '';
     }
     else {
-
         # the race
         my $first = Games::Sokoban::Solver::first_solution(
-            'prepared' => $p, 'pool' => $pool, 'time' => $cfg{'time'}, 'modes' => \@modes, 'caps' => \%caps, 'hold_gb' => $cfg{'hold'},
-            'blok'     => $o{'blok'},
-            'on_note'  => sub ($t) { info("  note: $t") },
+            'prepared'  => $p,
+            'pool'      => $pool,
+            'time'      => $cfg{'time'},
+            'modes'     => \@modes,
+            'caps'      => \%caps,
+            'hold_gb'   => $cfg{'hold'},
+            'blok'      => $o{'blok'},
+            'on_note'   => sub ($t) {info("  note: $t")},
             'on_answer' => sub ($a) {
                 return unless $verbose;
-                info(sprintf '    %-12s %-10s %7.1f s  %10d positions%s%s', @{$a}{ 'mode', 'reason', 'wall', 'nseen' },
+                info(
+                    sprintf '    %-12s %-10s %7.1f s  %10d positions%s%s',
+                    @{$a}{ 'mode', 'reason', 'wall', 'nseen' },
                     ($a->{'reason'} eq 'SOLVED' ? sprintf('  %d moves / %d pushes', @{$a}{ 'sollen', 'pushes' }) : ''),
-                    (length($a->{'fail'} // '') ? "  ($a->{'fail'})" : ''));
+                    (length($a->{'fail'} // '') ? "  ($a->{'fail'})"                                             : '')
+                );
             },
         );
         $r{'first'} = $first;
         my $cost = $p->{'cost'};
-        info(sprintf '  prepare: level %.2f s, code %.2f s, parser %.1f s, blok %.1f s (%d patterns%s)%s%s',
-            @{$cost}{ 'level', 'code', 'parser', 'blok' }, scalar @{ $p->{'blok_report'} }, ($p->{'blok_complete'} ? ', complete' : ', cut by the budget'),
-            (defined $cost->{'fest'}     ? sprintf(', fest %.1f s%s', $cost->{'fest'}, (@{ $p->{'fest_incomplete'} } ? ' (' . join(' and ', @{ $p->{'fest_incomplete'} }) . ' incomplete)' : '')) : ''),
-            (defined $cost->{'analysis'} ? sprintf(', analysis %.1f s', $cost->{'analysis'}) : ''));
+        info(
+            sprintf '  prepare: level %.2f s, code %.2f s, parser %.1f s, blok %.1f s (%d patterns%s)%s%s',
+            @{$cost}{ 'level', 'code', 'parser', 'blok' },
+            scalar @{ $p->{'blok_report'} },
+            ($p->{'blok_complete'} ? ', complete' : ', cut by the budget'),
+            (
+                defined $cost->{'fest'}
+                ? sprintf(', fest %.1f s%s',
+                    $cost->{'fest'},
+                    (@{ $p->{'fest_incomplete'} } ? ' (' . join(' and ', @{ $p->{'fest_incomplete'} }) . ' incomplete)' : ''))
+                : ''
+            ),
+            (defined $cost->{'analysis'} ? sprintf(', analysis %.1f s', $cost->{'analysis'}) : '')
+        );
         if (@{ $first->{'died'} }) {
-            for my $d (@{ $first->{'died'} }) { print {*STDERR} "soko-solver.pl: $tag: the engine of $d->{'mode'} died: " . (split /\n/, $d->{'error'})[0] . "\n" }
+            for my $d (@{ $first->{'died'} }) {
+                print {*STDERR} "soko-solver.pl: $tag: the engine of $d->{'mode'} died: " . (split /\n/, $d->{'error'})[0] . "\n";
+            }
             $exit = 3;
         }
         if ($first->{'reason'} ne 'SOLVED') {
             my %why;
             ++$why{ $_->{'reason'} } for @{ $first->{'answers'} };
-            info(sprintf '  UNSOLVED  %s  %.1f s', join(', ', map { "$_ $why{$_}" } sort keys %why) || 'no mode ran', Time::HiRes::time() - $t0);
+            info(
+                sprintf '  UNSOLVED  %s  %.1f s',
+                join(', ', map {"$_ $why{$_}"} sort keys %why) || 'no mode ran',
+                Time::HiRes::time() - $t0
+            );
             say_level_result($level, { %r, 'status' => 'UNSOLVED', 'reason' => 'no mode solved the level' });
             ++$tally{'UNSOLVED'};
             $exit ||= 1;
@@ -254,27 +313,34 @@ for my $w (@work) {
         # the proof
         if ($cfg{'optimal'} > 0 and !$Stop) {
             my $best = Games::Sokoban::Solver::best_solution(
-                'prepared' => $p, 'seed' => $first->{'path'}, 'time' => $cfg{'optimal'}, 'mode' => $cfg{'optimal_mode'}, 'band' => $o{'band'},
-                'max_gb'   => $cfg{'maxgb'}, 'stop' => \%stop_flag,
+                'prepared' => $p,
+                'seed'     => $first->{'path'},
+                'time'     => $cfg{'optimal'},
+                'mode'     => $cfg{'optimal_mode'},
+                'band'     => $o{'band'},
+                'max_gb'   => $cfg{'maxgb'},
+                'stop'     => \%stop_flag,
                 ($berk_best ? ('berkeley' => \%berk) : ()),
-                'on_improved' => sub ($path, $s) { info(sprintf '    improved: %d moves  %.1f s', length $path, $s) if $verbose },
+                'on_improved' =>
+                    sub ($path, $s) {info(sprintf '    improved: %d moves  %.1f s', length $path, $s) if $verbose},
             );
-            $r{'best'} = $best;
+            $r{'best'}        = $best;
             $r{'engine_path'} = $best->{'path'} if length $best->{'path'} and length $best->{'path'} <= length $first->{'path'};
-            $r{'proved'} = $best->{'proved'};
-            my $said
-                = $best->{'reason'} eq 'SOLVED' ? sprintf('%d moves PROVED shortest for the reduced level', length $best->{'path'})
-                : $best->{'status'} eq 'IGNORE' ? sprintf('%d moves, not proved (interrupted)', length $r{'engine_path'})
+            $r{'proved'}      = $best->{'proved'};
+            my $said =
+                $best->{'reason'} eq 'SOLVED' ? sprintf('%d moves PROVED shortest for the reduced level', length $best->{'path'})
+                : $best->{'status'} eq 'IGNORE' ? sprintf('%d moves, not proved (interrupted)',        length $r{'engine_path'})
                 : $best->{'status'} eq 'MEMCAP' ? sprintf('%d moves, not proved (the memory ceiling)', length $r{'engine_path'})
                 : $best->{'reason'} eq 'UNSOLVABLE' ? 'UNSOLVABLE -- the first solution stands'
-                : sprintf('%d moves, not proved (%s)', length $r{'engine_path'}, $best->{'status'});
-            info(sprintf '  optimal:  %s  %s %.1f s%s', $said, $cfg{'optimal_mode'}, $best->{'seconds'},
+                :   sprintf('%d moves, not proved (%s)', length $r{'engine_path'}, $best->{'status'});
+            info(sprintf '  optimal:  %s  %s %.1f s%s',
+                $said, $cfg{'optimal_mode'}, $best->{'seconds'},
                 (length $p->{'firststep'} ? sprintf(' (%d forced opening moves prepended)', length $p->{'firststep'}) : ''));
-        }
-    }
+        } ## end if ($cfg{'optimal'} > ...)
+    } ## end else [ if ($p->{'solved_by_opening'...})]
 
     # the whole path, checked
-    my $full = eval { Games::Sokoban::Solver::full_path($p, $r{'engine_path'}) };
+    my $full = eval {Games::Sokoban::Solver::full_path($p, $r{'engine_path'})};
     unless (defined $full) {
         print {*STDERR} "soko-solver.pl: $tag: " . ("$@" =~ s/\n.*//sr) . " -- the solution is NOT printed\n";
         say_level_result($level, { %r, 'status' => 'UNSOLVED', 'reason' => 'internal: the solution did not replay' });
@@ -286,24 +352,32 @@ for my $w (@work) {
     $r{'moves'}  = length $full;
     $r{'pushes'} = ($full =~ tr/DLRU//);
     $r{'forced'} = length $p->{'firststep'};
-    info(sprintf '  SOLVED    %d moves / %d pushes%s  %.1f s', $r{'moves'}, $r{'pushes'}, ($r{'proved'} ? ', proved' : ''), Time::HiRes::time() - $t0);
-    if ($o{'show'}) { print {*STDERR} "$full\n" }
+    info(
+        sprintf '  SOLVED    %d moves / %d pushes%s  %.1f s',
+        $r{'moves'}, $r{'pushes'},
+        ($r{'proved'} ? ', proved' : ''),
+        Time::HiRes::time() - $t0
+    );
+    if ($o{'show'}) {print {*STDERR} "$full\n"}
     say_level_result($level, \%r);
     ++$tally{'SOLVED'};
     ++$tally{'proved'} if $r{'proved'};
-}
-continue { $Label = undef }
-
+} ## end for my $w (@work)
+continue {$Label = undef}
 $pool->close;
 $pool->join;
 close $out if $out;
-info(sprintf 'done: %d solved (%d proved), %d unsolved, %d refused, %.0f s', @tally{ 'SOLVED', 'proved', 'UNSOLVED', 'REFUSED' }, Time::HiRes::time() - $t_run);
+info(
+    sprintf 'done: %d solved (%d proved), %d unsolved, %d refused, %.0f s',
+    @tally{ 'SOLVED', 'proved', 'UNSOLVED', 'REFUSED' },
+    Time::HiRes::time() - $t_run
+);
 exit $exit;
 
 # One level's line(s) on STDOUT, in the format asked for.
 sub say_level_result ($level, $r) {
     my $status = $r->{'status'};
-    if ($format eq 'path') { emit($status eq 'SOLVED' ? $r->{'path'} : $status) }
+    if    ($format eq 'path') {emit($status eq 'SOLVED' ? $r->{'path'} : $status)}
     elsif ($format eq 'sok') {
         emit($level->{'title'});
         emit($_) for @{ $level->{'rows'} };
@@ -313,38 +387,85 @@ sub say_level_result ($level, $r) {
     elsif ($format eq 'report') {
         my $first = $r->{'first'};
         my $best  = $r->{'best'};
-        emit(join "\t", $level->{'index'}, $level->{'title'}, $status, $r->{'moves'} // '', $r->{'pushes'} // '', $r->{'forced'} // '',
-            $r->{'proved'} // 0, $first ? ($first->{'mode'} // '', defined $first->{'seconds'} ? sprintf('%.1f', $first->{'seconds'}) : '') : ('', ''),
-            $best ? ($cfg{'optimal_mode'}, sprintf('%.1f', $best->{'seconds'})) : ('', ''), $r->{'path'} // '');
-    }
+        emit(
+            join "\t",
+            $level->{'index'},
+            $level->{'title'},
+            $status,
+            $r->{'moves'}  // '',
+            $r->{'pushes'} // '',
+            $r->{'forced'} // '',
+            $r->{'proved'} // 0,
+            $first ? ($first->{'mode'} // '', defined $first->{'seconds'} ? sprintf('%.1f', $first->{'seconds'}) : '') : ('', ''),
+            $best ? ($cfg{'optimal_mode'}, sprintf('%.1f', $best->{'seconds'})) : ('', ''),
+            $r->{'path'} // ''
+        );
+    } ## end elsif ($format eq 'report')
     else {
         my %j = (
-            'level'  => $level->{'index'},
-            'title'  => $level->{'title'},
-            'status' => $status,
+            'level'   => $level->{'index'},
+            'title'   => $level->{'title'},
+            'status'  => $status,
             'threads' => ($pool->threaded ? 'on' : 'off'),
-            ($status eq 'REFUSED' ? ('reason' => $r->{'reason'}) : ()),
+            ($status eq 'REFUSED'  ? ('reason' => $r->{'reason'}) : ()),
             ($status eq 'UNSOLVED' ? ('reason' => $r->{'reason'}) : ()),
-            ($status eq 'SOLVED' ? ('path' => $r->{'path'}, 'moves' => $r->{'moves'}, 'pushes' => $r->{'pushes'}, 'forced' => $r->{'forced'}, 'proved' => $r->{'proved'}) : ()),
+            (
+                $status eq 'SOLVED'
+                ? (
+                    'path'   => $r->{'path'},
+                    'moves'  => $r->{'moves'},
+                    'pushes' => $r->{'pushes'},
+                    'forced' => $r->{'forced'},
+                    'proved' => $r->{'proved'}
+                  )
+                : ()
+            ),
         );
         if (my $p = $r->{'prepared'}) {
             $j{'boxes'}         = $p->{'nbox'};
             $j{'cells'}         = $p->{'ncell'};
             $j{'blok_complete'} = $p->{'blok_complete'};
-            $j{'cost'}          = { map { $_ => 0 + sprintf('%.3f', $p->{'cost'}{$_}) } keys %{ $p->{'cost'} } };
+            $j{'cost'}          = { map {$_ => 0 + sprintf('%.3f', $p->{'cost'}{$_})} keys %{ $p->{'cost'} } };
         }
         if (my $f = $r->{'first'}) {
-            $j{'first'} = { 'reason' => $f->{'reason'}, ($f->{'reason'} eq 'SOLVED' ? ('mode' => $f->{'mode'}, 'moves' => $f->{'sollen'}, 'pushes' => $f->{'pushes'}, 'seconds' => 0 + sprintf('%.3f', $f->{'seconds'})) : ()),
-                'answers' => [map { { 'mode' => $_->{'mode'}, 'reason' => $_->{'reason'}, 'seconds' => 0 + sprintf('%.3f', $_->{'wall'}), 'positions' => 0 + $_->{'nseen'} } } @{ $f->{'answers'} }] };
-        }
+            $j{'first'} = {
+                'reason' => $f->{'reason'},
+                (
+                    $f->{'reason'} eq 'SOLVED'
+                    ? (
+                        'mode'    => $f->{'mode'},
+                        'moves'   => $f->{'sollen'},
+                        'pushes'  => $f->{'pushes'},
+                        'seconds' => 0 + sprintf('%.3f', $f->{'seconds'})
+                      )
+                    : ()
+                ),
+                'answers' => [
+                    map {
+                        {
+                            'mode'      => $_->{'mode'},
+                            'reason'    => $_->{'reason'},
+                            'seconds'   => 0 + sprintf('%.3f', $_->{'wall'}),
+                            'positions' => 0 + $_->{'nseen'}
+                        }
+                    } @{ $f->{'answers'} }
+                ]
+            };
+        } ## end if (my $f = $r->{'first'...})
         if (my $b = $r->{'best'}) {
-            $j{'best'} = { 'reason' => $b->{'reason'}, 'status' => $b->{'status'}, 'mode' => $cfg{'optimal_mode'}, 'moves' => length $b->{'path'}, 'proved' => $b->{'proved'}, 'seconds' => 0 + sprintf('%.3f', $b->{'seconds'}) };
+            $j{'best'} = {
+                'reason'  => $b->{'reason'},
+                'status'  => $b->{'status'},
+                'mode'    => $cfg{'optimal_mode'},
+                'moves'   => length $b->{'path'},
+                'proved'  => $b->{'proved'},
+                'seconds' => 0 + sprintf('%.3f', $b->{'seconds'})
+            };
         }
         emit($json->encode(\%j));
-    }
+    } ## end else [ if ($format eq 'path')]
     return;
-}
-
+} ## end sub say_level_result
 __END__
 
 =head1 NAME

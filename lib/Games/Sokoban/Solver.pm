@@ -37,32 +37,30 @@ package Games::Sokoban::Solver;
 # Lineage: the Sokoban project's drivers app/first/wave_batch.pl (the feeding
 # of the pool by kind, one level in hand), app/base/add_game.pl (the chain of
 # one level) and app/best/solve_one.pl (the call of the proof).
-
 use v5.42;
 use warnings FATAL => 'uninitialized';
 no warnings 'once';
-use Carp ();
-use Digest::MD5 ();
-use Scalar::Util ();
-use Time::HiRes ();
-use Games::Sokoban::Solver::Level     ();
-use Games::Sokoban::Solver::Code      ();
-use Games::Sokoban::Solver::Finder    ();
-use Games::Sokoban::Solver::Parser    ();
+use Carp                                       ();
+use Digest::MD5                                ();
+use Scalar::Util                               ();
+use Time::HiRes                                ();
+use Games::Sokoban::Solver::Level              ();
+use Games::Sokoban::Solver::Code               ();
+use Games::Sokoban::Solver::Finder             ();
+use Games::Sokoban::Solver::Parser             ();
 use Games::Sokoban::Solver::Festival::Analysis ();
 use Games::Sokoban::Solver::Fest::Analysis     ();
-use Games::Sokoban::Solver::Portfolio ();
-use Games::Sokoban::Solver::Race      ();
-use Games::Sokoban::Solver::Optimal   ();
-use Games::Sokoban::Solver::Path      ();
-use Games::Sokoban::Solver::Replay    ();
-use Games::Sokoban::Solver::Memory    ();
-
+use Games::Sokoban::Solver::Portfolio          ();
+use Games::Sokoban::Solver::Race               ();
+use Games::Sokoban::Solver::Optimal            ();
+use Games::Sokoban::Solver::Path               ();
+use Games::Sokoban::Solver::Replay             ();
+use Games::Sokoban::Solver::Memory             ();
 our $VERSION = '0.01';
 
 # The four engines and the optimal solver, by the names the run control is set
 # on; the twins join the list when a pool is made with BerkeleyDB.
-my @ENGINES = map { "Games::Sokoban::Solver::$_" } 'Firstbet', 'FirstBack', 'Festival', 'Fest';
+my @ENGINES = map {"Games::Sokoban::Solver::$_"} 'Firstbet', 'FirstBack', 'Festival', 'Fest';
 
 # Results of a pool that arrived while somebody was waiting for others (the
 # blok source collecting its tasks while a race's late answers come in, or the
@@ -141,7 +139,7 @@ C<title> and C<rows>. See L<Games::Sokoban::Solver::Level/read>.
 
 =cut
 
-sub read_levels ($text) { return Games::Sokoban::Solver::Level::read($text) }
+sub read_levels ($text) {return Games::Sokoban::Solver::Level::read($text)}
 
 =head2 pool
 
@@ -170,17 +168,17 @@ sub pool (%opt) {
     my $jobs = $opt{'jobs'} // 1;
     for my $pkg (@ENGINES) {
         no strict 'refs';
-        ${"${pkg}::QUIET"}  = $opt{'quiet'} // 2;    # Fest has none and prints nothing; the variable does no harm there
+        ${"${pkg}::QUIET"}  = $opt{'quiet'}  // 2;    # Fest has none and prints nothing; the variable does no harm there
         ${"${pkg}::MAX_GB"} = $opt{'max_gb'} // 0;
     }
     $Games::Sokoban::Solver::Festival::BLOK_REPLACES //= 0;
-    $Games::Sokoban::Solver::Fest::BLOK = 1;
+    $Games::Sokoban::Solver::Fest::BLOK      = 1;
     $Games::Sokoban::Solver::Portfolio::BERK = 0;
     if (my $berk = $opt{'berkeley'}) {
         _load_berkeley($berk);
         $Games::Sokoban::Solver::Firstbet::Berk::QUIET          = 2;
         $Games::Sokoban::Solver::Firstbet::Berk::MAX_GB         = $opt{'max_gb'} // 0;
-        $Games::Sokoban::Solver::Firstbet::Berk::STORE_PER_MODE = 1;    # the modes of one level run at once
+        $Games::Sokoban::Solver::Firstbet::Berk::STORE_PER_MODE = 1;                     # the modes of one level run at once
         $Games::Sokoban::Solver::Firstbet::Berk::CACHE          = _cache_bytes($berk->{'cache_gb'});
         $Games::Sokoban::Solver::Portfolio::BERK                = 1;
     }
@@ -192,11 +190,12 @@ sub pool (%opt) {
     );
     $race->start;
     return $race;
-}
+} ## end sub pool
 
 sub _load_berkeley ($berk) {
     Carp::croak('REFUSED: the BerkeleyDB branch needs a root directory for the stores') unless length($berk->{'root'} // '');
-    eval { require BerkeleyDB; 1 } or Carp::croak('REFUSED: the BerkeleyDB module is not installed, so the search cannot go to disk');
+    eval {require BerkeleyDB; 1}
+        or Carp::croak('REFUSED: the BerkeleyDB module is not installed, so the search cannot go to disk');
     require Games::Sokoban::Solver::Berkeley;
     require Games::Sokoban::Solver::Firstbet::Berk;
     require Games::Sokoban::Solver::Optimal::Berk;
@@ -249,16 +248,15 @@ also be a hash as L</read_levels> returns them.
 
 sub prepare (%opt) {
     my $level = $opt{'rows'} // Carp::croak('prepare: rows are needed');
-    my ($rows, $title, $index) = ref $level eq 'HASH' ? ($level->{'rows'}, $level->{'title'} // '', $level->{'index'} // 0) : ($level, '', 0);
+    my ($rows, $title, $index) =
+        ref $level eq 'HASH' ? ($level->{'rows'}, $level->{'title'} // '', $level->{'index'} // 0) : ($level, '', 0);
     my @notes;
-    my $note = sub ($text) { push @notes, $text; $opt{'on_note'}->($text) if $opt{'on_note'}; return };
+    my $note = sub ($text) {push @notes, $text; $opt{'on_note'}->($text) if $opt{'on_note'}; return};
     my %cost;
     my $t0 = Time::HiRes::time();
-
     my ($code0, $code1, $info) = Games::Sokoban::Solver::Level::normalize($rows);
     $note->($_) for @{ $info->{'notes'} };
     $cost{'level'} = Time::HiRes::time() - $t0;
-
     $t0 = Time::HiRes::time();
     my %code = Games::Sokoban::Solver::Code::prepare($code1);
     $cost{'code'} = Time::HiRes::time() - $t0;
@@ -285,6 +283,7 @@ sub prepare (%opt) {
         'cost'              => \%cost,
         'notes'             => \@notes,
     );
+
     if ($p{'solved_by_opening'}) {
         $note->('the forced opening alone solves the level: nothing to search');
         return \%p;
@@ -301,33 +300,42 @@ sub prepare (%opt) {
     my %game = Games::Sokoban::Solver::Parser::parse(\%code, %parse);
     $p{'game'}          = \%game;
     $p{'game_blob'}     = Games::Sokoban::Solver::Parser::blob(\%game);
-    $p{'blok_report'}   = $report{'blok'} // [];
-    $p{'blok_complete'} = $report{'blok_complete'} // 0;
+    $p{'blok_report'}   = $report{'blok'}            // [];
+    $p{'blok_complete'} = $report{'blok_complete'}   // 0;
     $cost{'blok'}       = $report{'seconds'}{'blok'} // 0;
     $cost{'parser'}     = Time::HiRes::time() - $t0 - $cost{'blok'};
     {
         my $rows = $p{'blok_report'};
-        my $cut  = grep { $_->[2] < $_->[1] } @$rows;
-        $note->(sprintf '%d patterns, %d complete, %d cut by the budget of %s s', scalar @$rows, @$rows - $cut, $cut, $budget // 'no') if @$rows;
+        my $cut  = grep {$_->[2] < $_->[1]} @$rows;
+        $note->(
+            sprintf '%d patterns, %d complete, %d cut by the budget of %s s',
+            scalar @$rows,
+            @$rows - $cut,
+            $cut, $budget // 'no'
+            )
+            if @$rows;
     }
 
     # The two other analyses: now, or as builders for first_solution.
-    my %want = map { $_ => 1 } @{ $opt{'want'} // ['game', 'fest', 'analysis'] };
+    my %want        = map {$_ => 1} @{ $opt{'want'} // ['game', 'fest', 'analysis'] };
     my $fest_budget = $opt{'fest_budget'} // 120;
     $p{'build'}{'fest'} = sub {
         my $fest = Games::Sokoban::Solver::Festival::Analysis::parse($code{'code'}, $fest_budget);
         Games::Sokoban::Solver::Festival::Analysis::with_blok($fest, $game{'blok'});
-        $p{'fest_incomplete'} = [grep { $fest->{"${_}_incomplete"} } 'hotspots', 'envelopes'];
+        $p{'fest_incomplete'} = [grep {$fest->{"${_}_incomplete"}} 'hotspots', 'envelopes'];
         return Games::Sokoban::Solver::Festival::Analysis::freeze($fest);
-    } if $want{'fest'};
+        }
+        if $want{'fest'};
     $p{'build'}{'analysis'} = sub {
-        return Games::Sokoban::Solver::Fest::Analysis::analysis_record(Games::Sokoban::Solver::Fest::Analysis::prepare(\%game));
-    } if $want{'analysis'};
+        return Games::Sokoban::Solver::Fest::Analysis::analysis_record(
+            Games::Sokoban::Solver::Fest::Analysis::prepare(\%game));
+        }
+        if $want{'analysis'};
     unless ($opt{'lazy'}) {
-        build(\%p, $_, $note) for grep { $p{'build'}{$_} } 'fest', 'analysis';
+        build(\%p, $_, $note) for grep {$p{'build'}{$_}} 'fest', 'analysis';
     }
     return \%p;
-}
+} ## end sub prepare
 
 =head2 build
 
@@ -345,7 +353,7 @@ sub build ($p, $what, $note = undef) {
     my $builder = delete $p->{'build'}{$what};
     return $p->{"${what}_blob"} unless $builder;
     my $t0   = Time::HiRes::time();
-    my $blob = eval { $builder->() };
+    my $blob = eval {$builder->()};
     $p->{'cost'}{$what} = Time::HiRes::time() - $t0;
     unless (defined $blob) {
         my $why = (split /\n/, "$@")[0] // 'died without a word';
@@ -362,7 +370,7 @@ sub build ($p, $what, $note = undef) {
         $note->($text) if $note;
     }
     return $blob;
-}
+} ## end sub build
 
 =head2 label
 
@@ -373,7 +381,7 @@ its reduced digits.
 
 =cut
 
-sub label ($code1) { return unpack('Q>', "\0\0" . substr(Digest::MD5::md5($code1), 0, 6)) }
+sub label ($code1) {return unpack('Q>', "\0\0" . substr(Digest::MD5::md5($code1), 0, 6))}
 
 # THE BLOK SOURCE OF A POOL: the Parser's patterns dealt out as tasks of kind
 # blok, in the two passes Finder::blok_table makes serially -- every pattern to
@@ -389,10 +397,9 @@ sub _pool_blok_source ($race, $label) {
             my $free = tr/03//;
             $_ => ($nbox - 1 < $free ? $nbox - 1 : $free)
         } keys %$patlist;
-        my @order = sort { $kmax{$a} <=> $kmax{$b} or $a cmp $b } keys %$patlist;
+        my @order = sort {$kmax{$a} <=> $kmax{$b} or $a cmp $b} keys %$patlist;
         my (%bloks, %row);
         $row{$_} = [$_, $kmax{$_}, 0, 0, 0] for @order;
-
         for my $pass ([1, 3], [4, undef]) {
             my ($from, $to) = @$pass;
             last if defined $deadline and Time::HiRes::time() > $deadline;
@@ -408,7 +415,7 @@ sub _pool_blok_source ($race, $label) {
             while (%waiting) {
                 my $r = _take($race, 1, 'blok');
                 Carp::confess('the pool ended while patterns were in flight') unless defined $r;
-                next unless ref $r;
+                next                                                          unless ref $r;
                 Carp::croak("INTERNAL: a blok task died: $r->{'error'}") if $r->{'error'};
                 my ($pattern, $k_done, $string, $candidates, $seconds) = @{ $r->{'payload'}[0] };
                 delete $waiting{$pattern};
@@ -417,12 +424,12 @@ sub _pool_blok_source ($race, $label) {
                 $row{$pattern}[3] += $candidates;
                 $row{$pattern}[4] += $seconds;
             }
-            last if grep { $row{$_}[2] < $target{$_} } keys %target;    # something was cut: the deadline is past
-        }
+            last if grep {$row{$_}[2] < $target{$_}} keys %target;    # something was cut: the deadline is past
+        } ## end for my $pass ([1, 3], [...])
         $bloks{$_} //= '' for @order;
-        return (\%bloks, [map { $row{$_} } @order]);
-    };
-}
+        return (\%bloks, [map {$row{$_}} @order]);
+    }; ## end sub
+} ## end sub _pool_blok_source
 
 # The next result of the pool for the one asking: the ones put aside for it
 # first, then the pool's own, those of another kind (or another level, when
@@ -470,19 +477,18 @@ when the first mode that needs it comes up. Returns
 
 sub first_solution (%opt) {
     my $p    = $opt{'prepared'} // Carp::croak('first_solution: a prepared level is needed');
-    my $note = sub ($text) { push @{ $p->{'notes'} }, $text; $opt{'on_note'}->($text) if $opt{'on_note'}; return };
+    my $note = sub ($text) {push @{ $p->{'notes'} }, $text; $opt{'on_note'}->($text) if $opt{'on_note'}; return};
     my %r    = ('reason' => 'UNSOLVED', 'answers' => [], 'died' => []);
     return \%r if $p->{'solved_by_opening'};
-
-    my $own  = !$opt{'pool'};
-    my $race = $opt{'pool'} // pool('jobs' => $opt{'jobs'} // 1, 'max_gb' => $opt{'max_gb'});
-    my $jobs = $race->threaded ? $race->jobs : 1;
-    my $time = $opt{'time'} // 60;
-    my %cap  = %{ $opt{'caps'} // { Games::Sokoban::Solver::Portfolio::default_caps() } };
-    my $hold = $opt{'hold_gb'} // 0;
-    my $label = $p->{'label'};
+    my $own     = !$opt{'pool'};
+    my $race    = $opt{'pool'} // pool('jobs' => $opt{'jobs'} // 1, 'max_gb' => $opt{'max_gb'});
+    my $jobs    = $race->threaded ? $race->jobs : 1;
+    my $time    = $opt{'time'} // 60;
+    my %cap     = %{ $opt{'caps'} // { Games::Sokoban::Solver::Portfolio::default_caps() } };
+    my $hold    = $opt{'hold_gb'} // 0;
+    my $label   = $p->{'label'};
     my @pending = @{ $opt{'modes'} // [Games::Sokoban::Solver::Portfolio::race_order()] };
-    my %kind    = map { $_ => Games::Sokoban::Solver::Portfolio::kind_of($_) } @pending;
+    my %kind    = map {$_ => Games::Sokoban::Solver::Portfolio::kind_of($_)} @pending;
     my %blob_of = ('game' => 'game_blob', 'fest' => 'fest_blob', 'analysis' => 'analysis_blob');
     my (%flying, $inflight, $won, $waited);
     $inflight = 0;
@@ -496,7 +502,7 @@ sub first_solution (%opt) {
         # Feed: the first waiting mode whose kind has room and whose blob exists
         # or can be built now.
         my $light_only = ($hold > 0 and Games::Sokoban::Solver::Memory::used_gb() > $hold) ? 1 : 0;
-        FEED: while ($inflight < $jobs and @pending) {
+    FEED: while ($inflight < $jobs and @pending) {
             my $ix;
             for my $i (0 .. $#pending) {
                 my $k = $kind{ $pending[$i] };
@@ -506,13 +512,16 @@ sub first_solution (%opt) {
             }
             last FEED unless defined $ix;
             my ($mode) = splice @pending, $ix, 1;
-            my $what = Games::Sokoban::Solver::Portfolio::blob_for($mode);
-            my $blob = $p->{ $blob_of{$what} } // build($p, $what eq 'game' ? 'game' : $what, $note);
+            my $what   = Games::Sokoban::Solver::Portfolio::blob_for($mode);
+            my $blob   = $p->{ $blob_of{$what} } // build($p, $what eq 'game' ? 'game' : $what, $note);
             unless (defined $blob) {
-                my @left = grep { Games::Sokoban::Solver::Portfolio::blob_for($_) ne $what } @pending;
+                my @left = grep {Games::Sokoban::Solver::Portfolio::blob_for($_) ne $what} @pending;
                 my $more = @pending - @left;
-                $note->(sprintf '%s left out: no %s analysis%s', $mode . ($more ? " and $more more modes" : ''), $what,
-                    ($p->{'failed'}{$what} ? " (it failed: $p->{'failed'}{$what})" : ''));
+                $note->(
+                    sprintf '%s left out: no %s analysis%s',
+                    $mode . ($more ? " and $more more modes" : ''),
+                    $what, ($p->{'failed'}{$what} ? " (it failed: $p->{'failed'}{$what})" : '')
+                );
                 @pending = @left;
                 next FEED;
             }
@@ -521,24 +530,27 @@ sub first_solution (%opt) {
             $race->submit($label, $mode, $blob, $limit, \%ctl);
             ++$inflight;
             ++$flying{ $kind{$mode} };
-        }
+        } ## end FEED: while ($inflight < $jobs ...)
         last unless $inflight or @pending;
 
         # Nothing in flight and modes waiting: only the memory hold can do that.
         unless ($inflight) {
-            $note->(sprintf 'nothing may start: the machine holds %.1f GB, over the hold of %g', Games::Sokoban::Solver::Memory::used_gb(), $hold)
+            $note->(
+                sprintf 'nothing may start: the machine holds %.1f GB, over the hold of %g',
+                Games::Sokoban::Solver::Memory::used_gb(), $hold
+                )
                 unless $waited++;
             Time::HiRes::sleep(1);
             next;
         }
-
         my $a = _take($race, 1, 'solve', $label);
         Carp::confess('the pool ended with modes in flight') unless defined $a;
-        next unless ref $a;
+        next                                                 unless ref $a;
         --$inflight;
         --$flying{ $kind{ $a->{'mode'} } } if $kind{ $a->{'mode'} };
-        $opt{'on_answer'}->($a) if $opt{'on_answer'};
+        $opt{'on_answer'}->($a)            if $opt{'on_answer'};
         my $reason = $a->{'reason'};
+
         if ($reason eq 'DIE') {
             push @{ $r{'died'} }, { 'mode' => $a->{'mode'}, 'error' => $a->{'error'} };
             $note->("the engine of $a->{'mode'} died: " . (split /\n/, $a->{'error'})[0]);
@@ -547,17 +559,17 @@ sub first_solution (%opt) {
         next if $reason eq 'IGNORE';
         push @{ $r{'answers'} }, $a;
         if ($reason eq 'SOLVED' and !$won) {
-            $won = $a;
+            $won     = $a;
             @pending = ();    # what has not started does not start; the running are told by the signal
         }
-    }
-
+    } ## end while (1)
     if ($won) {
-        @r{ 'reason', 'path', 'mode', 'seconds', 'sollen', 'pushes' } = ('SOLVED', @{$won}{ 'path', 'mode', 'wall', 'sollen', 'pushes' });
+        @r{ 'reason', 'path', 'mode', 'seconds', 'sollen', 'pushes' } =
+            ('SOLVED', @{$won}{ 'path', 'mode', 'wall', 'sollen', 'pushes' });
     }
-    if ($own) { $race->close; $race->join; delete $Aside{ Scalar::Util::refaddr($race) } }
+    if ($own) {$race->close; $race->join; delete $Aside{ Scalar::Util::refaddr($race) }}
     return \%r;
-}
+} ## end sub first_solution
 
 =head2 best_solution
 
@@ -585,21 +597,32 @@ The optimal solver on the reduced level, seeded by C<seed>. Returns
 
 sub best_solution (%opt) {
     my $p = $opt{'prepared'} // Carp::croak('best_solution: a prepared level is needed');
-    return { 'reason' => 'SOLVED', 'status' => 'SOLVED', 'path' => '', 'proved' => 1, 'seconds' => 0, 'candidates' => 0, 'pops' => 0, 'track' => [] }
+    return {
+        'reason'     => 'SOLVED',
+        'status'     => 'SOLVED',
+        'path'       => '',
+        'proved'     => 1,
+        'seconds'    => 0,
+        'candidates' => 0,
+        'pops'       => 0,
+        'track'      => []
+        }
         if $p->{'solved_by_opening'};
     my $mode = $opt{'mode'} // 'DIAL';
-    Carp::croak("best_solution: the mode is DIAL, ASTAR or FIFO, not '$mode'") unless grep { $_ eq $mode } Games::Sokoban::Solver::Portfolio::solver_modes();
+    Carp::croak("best_solution: the mode is DIAL, ASTAR or FIFO, not '$mode'")
+        unless grep {$_ eq $mode} Games::Sokoban::Solver::Portfolio::solver_modes();
     my $pkg = 'Games::Sokoban::Solver::Optimal';
     if ($opt{'berkeley'}) {
-        _load_berkeley({ 'root' => $Games::Sokoban::Solver::Berkeley::ROOT // $opt{'berkeley'}{'root'} }) unless defined &Games::Sokoban::Solver::Optimal::Berk::solve;
-        $pkg = 'Games::Sokoban::Solver::Optimal::Berk';
+        _load_berkeley({ 'root' => $Games::Sokoban::Solver::Berkeley::ROOT // $opt{'berkeley'}{'root'} })
+            unless defined &Games::Sokoban::Solver::Optimal::Berk::solve;
+        $pkg                                          = 'Games::Sokoban::Solver::Optimal::Berk';
         $Games::Sokoban::Solver::Optimal::Berk::CACHE = _cache_bytes($opt{'berkeley'}{'cache_gb'});
     }
     no strict 'refs';
     ${"${pkg}::QUIET"}       = 2;
     ${"${pkg}::LIMIT"}       = $opt{'time'} // 60;
     ${"${pkg}::MODE"}        = $mode;
-    ${"${pkg}::BAND"}        = $opt{'band'} // 2;
+    ${"${pkg}::BAND"}        = $opt{'band'}   // 2;
     ${"${pkg}::MAX_GB"}      = $opt{'max_gb'} // 0;
     ${"${pkg}::RACE_FLAG"}   = $opt{'stop'};
     ${"${pkg}::RACE_GID"}    = $p->{'label'};
@@ -620,7 +643,7 @@ sub best_solution (%opt) {
         'pops'       => $pops,
         'track'      => [@{"${pkg}::Track"}],
     };
-}
+} ## end sub best_solution
 
 =head2 full_path
 
@@ -635,7 +658,10 @@ does not play -- which no caller should ever see.
 =cut
 
 sub full_path ($p, $path) {
-    my $full = eval { Games::Sokoban::Solver::Path::rebuilt(Games::Sokoban::Solver::Path::level($p->{'code1'}), 'path' => $p->{'firststep'} . ($path // '')) };
+    my $full = eval {
+        Games::Sokoban::Solver::Path::rebuilt(Games::Sokoban::Solver::Path::level($p->{'code1'}),
+            'path' => $p->{'firststep'} . ($path // ''));
+    };
     Carp::croak('INTERNAL: the solution does not play on the level: ' . ((split /\n/, "$@")[0] // '')) unless defined $full;
     my $why = Games::Sokoban::Solver::Replay::check($p->{'code1'}, $full);
     Carp::croak("INTERNAL: the second reading refuses the solution: $why") if defined $why;
@@ -685,34 +711,50 @@ The whole chain on one level. Returns
 
 sub solve_level (%opt) {
     my $level = $opt{'rows'};
-    my %r = ('title' => (ref $level eq 'HASH' ? $level->{'title'} // '' : ''), 'index' => (ref $level eq 'HASH' ? $level->{'index'} // 0 : 0));
-    my %pass = map { ($_, $opt{$_}) } grep { exists $opt{$_} } 'rows', 'blok_budget', 'fest_budget', 'want', 'pool', 'on_note';
-    my $p = eval { prepare(%pass) };
+    my %r     = (
+        'title' => (ref $level eq 'HASH' ? $level->{'title'} // '' : ''),
+        'index' => (ref $level eq 'HASH' ? $level->{'index'} // 0  : 0)
+    );
+    my %pass = map {($_, $opt{$_})} grep {exists $opt{$_}} 'rows', 'blok_budget', 'fest_budget', 'want', 'pool', 'on_note';
+    my $p    = eval {prepare(%pass)};
     unless ($p) {
         my $why = "$@";
         die $why unless $why =~ /\AREFUSED:/;
         return { %r, 'status' => 'REFUSED', 'reason' => refusal($why) };
     }
     $r{'prepared'} = $p;
-    %pass = map { ($_, $opt{$_}) } grep { exists $opt{$_} } 'time', 'modes', 'pool', 'jobs', 'caps', 'hold_gb', 'max_gb', 'blok', 'on_answer', 'on_note';
+    %pass = map {($_, $opt{$_})} grep {exists $opt{$_}} 'time', 'modes', 'pool', 'jobs', 'caps', 'hold_gb', 'max_gb', 'blok',
+        'on_answer', 'on_note';
     my $first = first_solution(%pass, 'prepared' => $p);
     $r{'first'} = $first;
     my $path;
-    if ($p->{'solved_by_opening'}) { $path = ''; $r{'proved'} = 1 }
+    if    ($p->{'solved_by_opening'}) {$path = ''; $r{'proved'} = 1}
     elsif ($first->{'reason'} ne 'SOLVED') {
-        return { %r, 'status' => 'UNSOLVED', 'reason' => (@{ $first->{'died'} } ? 'an engine died: ' . $first->{'died'}[0]{'error'} : 'no mode solved the level'), 'proved' => 0 };
+        return {
+            %r,
+            'status' => 'UNSOLVED',
+            'reason' =>
+                (@{ $first->{'died'} } ? 'an engine died: ' . $first->{'died'}[0]{'error'} : 'no mode solved the level'),
+            'proved' => 0
+        };
     }
     else {
         $path = $first->{'path'};
         $r{'proved'} = 0;
         if (($opt{'optimal'} // 60) > 0) {
-            %pass = map { ($_, $opt{$_}) } grep { exists $opt{$_} } 'band', 'max_gb', 'stop', 'on_improved', 'berkeley';
-            my $best = best_solution(%pass, 'prepared' => $p, 'seed' => $path, 'time' => $opt{'optimal'} // 60, 'mode' => $opt{'optimal_mode'} // 'DIAL');
-            $r{'best'} = $best;
-            $path = $best->{'path'} if length $best->{'path'} and length $best->{'path'} <= length $path;
+            %pass = map {($_, $opt{$_})} grep {exists $opt{$_}} 'band', 'max_gb', 'stop', 'on_improved', 'berkeley';
+            my $best = best_solution(
+                %pass,
+                'prepared' => $p,
+                'seed'     => $path,
+                'time'     => $opt{'optimal'}      // 60,
+                'mode'     => $opt{'optimal_mode'} // 'DIAL'
+            );
+            $r{'best'}   = $best;
+            $path        = $best->{'path'} if length $best->{'path'} and length $best->{'path'} <= length $path;
             $r{'proved'} = $best->{'proved'};
         }
-    }
+    } ## end else [ if ($p->{'solved_by_opening'...})]
     my $full = full_path($p, $path);
     return {
         %r,
@@ -722,10 +764,8 @@ sub solve_level (%opt) {
         'pushes' => ($full =~ tr/DLRU//),
         'forced' => length $p->{'firststep'},
     };
-}
-
+} ## end sub solve_level
 1;
-
 __END__
 
 =head1 EXIT OF A WORKER, AND WHAT A RESULT MEANS

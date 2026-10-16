@@ -2,42 +2,51 @@
 
 =head1 NAME
 
-Games::Sokoban::Festival - the Festival solver as a first-solution engine
+Games::Sokoban::Solver::Festival - the Festival solver as a first-solution engine
 
 =head1 SYNOPSIS
 
-    use Games::Sokoban::Festival ();
+    use Games::Sokoban::Solver::Festival ();
 
     my ($reason, $path, $doba, $nseen)
-        = Games::Sokoban::Festival::solve($gameid, $fest_blob, 90, 'FF_BASE');
+        = Games::Sokoban::Solver::Festival::solve($gameid, $fest_blob, 90, 'FF_BASE');
 
-    my @modes = Games::Sokoban::Festival::modes();   # the eight strategies
+    my @modes = Games::Sokoban::Solver::Festival::modes();   # the eight strategies
 
 =head1 DESCRIPTION
 
 This is a Perl port of Yaron Shoham's Festival 3.1, run in this project as one
-of two first-solution engines beside C<Games::Sokoban::Firstbet>. It is not a
+of two first-solution engines beside C<Games::Sokoban::Solver::Firstbet>. It is not a
 wrapper: the C source was transcribed, then reworked over several waves until it
 was a Perl program rather than C written in Perl. The wrapper around the real
-executable is a different module, C<Games::Sokoban::FestivalEXE>.
+executable stayed in the Sokoban project (its module C<FestivalEXE>).
 
 The file carries B<no comments>. That is deliberate, and this document is the
 other half of the decision: what a comment would have said about the design, the
 measurements and the traps is here, and the source is left to say what the code
-does. The line-by-line commentary the file used to carry is in git, at the last
-commit before the 0.05 promotion.
+does. The line-by-line commentary the file used to carry is in the Sokoban
+project's git, at the last commit before the 0.05 promotion.
+
+This document came with the engine from the Sokoban project (the engine is its
+Festival 0.20). The gates (C<ai/...>), the drivers
+(C<app/...>), the campaigns and the database it names are that project's and
+are not part of this distribution; they are kept here as the record of how the
+engine was verified. In this distribution the engine is reached through
+L<Games::Sokoban::Solver>, its analysis made by
+L<Games::Sokoban::Solver::Festival::Analysis>, and the gate that holds it to
+the project's original is C<xt/eq_engine.pl --engine Festival>.
 
 =head2 What it is for
 
 To find A solution, not a short one. Length is the optimal solver's business
-(C<Games::Sokoban::Solver>). A game this engine solves is a game that stopped
+(C<Games::Sokoban::Solver::Optimal>). A game this engine solves is a game that stopped
 being unsolved, which is the only figure this project keeps score by.
 
 =head1 THE INTERFACE
 
 The whole outward surface is two subroutines and six package variables. Nothing
 else is reachable from outside, and that is checked at every promotion with
-C<perl ai/module_surface.pl lib/Games/Sokoban/Festival.pm --subs>.
+the project's C<ai/module_surface.pl --subs> (here C<xt/surface.pl>).
 
 =head2 solve
 
@@ -91,7 +100,7 @@ every time on all eight modes and C<$nseen> differed on six of them.
 
 C<solve> is B<database-free>. It takes the blob as an argument and returns its
 answer; the calling script owns the connection and the persistence, exactly as
-C<Games::Sokoban::Firstbet::solve> does.
+C<Games::Sokoban::Solver::Firstbet::solve> does.
 
 =head2 modes
 
@@ -119,7 +128,7 @@ against this process.
 
 =item $RACE_FLAG, $RACE_GID
 
-Set by C<Games::Sokoban::Race> so that a losing arm can be told to stop. The
+Set by C<Games::Sokoban::Solver::Race> so that a losing arm can be told to stop. The
 three search loops poll them at one site each (C<run_aborted>), and since
 2026-09-11 the flag is read B<once a second> rather than on the eight-second
 progress poll it used to share: a shared-hash read is cheap, and a mode that has
@@ -182,7 +191,7 @@ deadlock battery; see L</DEADLOCKS>.
 =head1 WHAT IT TAKES IN
 
 B<The engine does not analyse a level.> It used to, and since 2026-08-24 it does
-not: the analysis is a separate module, C<Games::Sokoban::Festival_Parser>,
+not: the analysis is a separate module, C<Games::Sokoban::Solver::Festival::Analysis>,
 which runs offline and stores its result in C<game_blob.fest>. C<load_level>
 installs it and derives the few things that are cheaper to rebuild than to
 store - the whole-board masks, C<$Inv_epsilon>, the flat pattern offsets, and
@@ -370,7 +379,7 @@ The teardown at the END of a solve is a different matter, and the measurement
 below still stands for it: what 0.19 frees is freed between the searches of one
 game, where the next search asks for blocks of the same shape.
 
-So the teardown C<Games::Sokoban::Firstbet> gained in 3.2 does not belong here,
+So the teardown C<Games::Sokoban::Solver::Firstbet> gained in 3.2 does not belong here,
 and this was measured rather than argued (2026-08-29, six games in one process,
 FF_BASE, 15 s each). Freeing the pools at the end of C<solve> took the process
 from B<130 MB to 214 MB> - 64 % worse - because every game then had to allocate
@@ -737,7 +746,7 @@ same boxes twice.
 =back
 
 So C<solve> passes the letters of C<sol_moves_string> through
-C<Games::Sokoban::Path::rebuilt> before it returns them, with the level as this
+C<Games::Sokoban::Solver::Path::rebuilt> before it returns them, with the level as this
 engine holds it (C<$Initial_board>, C<$Initial_sokoban_p>; the same cells, walls,
 goals and boxes as the stored board, measured on 797 games). That procedure
 plays the letters, takes down the pushes until every goal is under a box,
@@ -753,7 +762,7 @@ path rewritten (20 pairs, 18 of them shorter, none failed).
 
 =head1 RUNNING IT IN A RACE
 
-C<Games::Sokoban::Race> drives several engines or modes over one game and stops
+C<Games::Sokoban::Solver::Race> drives several engines or modes over one game and stops
 the losers. It sets C<$RACE_FLAG> and C<$RACE_GID> symbolically; the three
 search loops poll them at one site each, the race flag once a second, and a
 polled abort returns C<IGNORE>, which is recorded nowhere. C<MEMCAP> from the
@@ -833,7 +842,7 @@ invariants.
 =item ai/t_level_guarantees.pl
 
 Not a test of this engine but of the world it works in: the properties
-C<app/zdroj.pl> and C<Games::Sokoban::Code> established once, checked over all
+C<app/zdroj.pl> and C<Games::Sokoban::Solver::Code> established once, checked over all
 32 236 games. It is what licenses the engine not to re-check them.
 
 =item ai/t_shadow.pl, ai/module_surface.pl --subs, ai/audit_decls.pl
@@ -929,19 +938,26 @@ The assertion behind each one stayed, comparing against the stored count.
 
 =head1 SEE ALSO
 
-L<Games::Sokoban::Festival_Parser> - the level analysis, and the blob format.
+L<Games::Sokoban::Solver::Festival::Analysis> - the level analysis, and the blob format.
 
-L<Games::Sokoban::FestivalEXE> - the wrapper around the real Festival binary.
+L<Games::Sokoban::Solver::Fest> - the same eight strategies rewritten in plain Perl.
 
-L<Games::Sokoban::Firstbet> - the other first-solution engine.
+L<Games::Sokoban::Solver::Firstbet> - the other first-solution engine.
 
-C<app/fest_all.pl>, C<app/fest_prep.pl>, C<app/loop_base.ps1> - the drivers.
-
-The C<pravidla> skill, section 9, for how a promotion into this file works.
+L<Games::Sokoban::Solver> - the facade that runs every engine, and C<soko-solver.pl>.
 
 =head1 AUTHOR
 
-The Festival algorithm is Yaron Shoham's (Festival 3.1). This port and its
-subsequent reworking belong to the Sokoban project.
+Jiri Broz, E<lt>jiri.krobot.broz@gmail.comE<gt>. The Festival algorithm is
+Yaron Shoham's (Festival 3.1); this port and its reworking were made in the
+Sokoban project.
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2026 by Jiri Broz
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.42.2 or,
+at your option, any later version of Perl 5 you may have available.
 
 =cut

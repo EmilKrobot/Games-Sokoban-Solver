@@ -17,17 +17,15 @@ use v5.42;
 use FindBin ();
 use lib "$FindBin::Bin/../lib", "$FindBin::Bin/lib";
 use Gate;
-use Getopt::Long   ();
-use Compress::Zlib ();
-use Storable       ();
-use Time::HiRes    ();
+use Getopt::Long                               ();
+use Compress::Zlib                             ();
+use Storable                                   ();
+use Time::HiRes                                ();
 use Games::Sokoban::Solver::Festival::Analysis ();
 STDOUT->autoflush(1);
-
 my %opt = ('limit' => 7, 'gameids' => '', 'fuse' => 1, 'spoil' => 0);
 Getopt::Long::GetOptions(\%opt, 'limit=i', 'gameids=s', 'fuse!', 'spoil!')
     or die "usage: eq_festival_analysis.pl [--limit N] [--gameids L] [--nofuse] [--spoil]\n";
-
 my $db  = Gate::db('Sokoban');
 my $sql = <<'SQL';
     SELECT g.gameid, g.code, g.fest, g.game, d.size_tier
@@ -35,28 +33,31 @@ my $sql = <<'SQL';
      WHERE g.source = 'PARSER' AND g.fest IS NOT NULL AND g.game IS NOT NULL
 SQL
 my @rows;
+
 if (length $opt{'gameids'}) {
-    my @ids = grep { /\A\d+\z/ } split /[,\s]+/, $opt{'gameids'};
+    my @ids = grep {/\A\d+\z/} split /[,\s]+/, $opt{'gameids'};
     @rows = @{ $db->selectall_arrayref("$sql AND g.gameid IN (" . join(',', @ids) . ') ORDER BY g.gameid') };
 }
 else {
     @rows = @{ $db->selectall_arrayref("$sql AND g.gameid IN (1, 16899, 30650) ORDER BY g.gameid") };
     for my $tier (1 .. 4) {
-        push @rows, @{ $db->selectall_arrayref("$sql AND d.size_tier = ? AND g.gameid NOT IN (1, 16899, 30650) ORDER BY random() LIMIT ?", undef, $tier, $opt{'limit'}) };
+        push @rows,
+            @{
+                $db->selectall_arrayref(
+                    "$sql AND d.size_tier = ? AND g.gameid NOT IN (1, 16899, 30650) ORDER BY random() LIMIT ?",
+                    undef, $tier, $opt{'limit'})
+             };
     }
 }
-
-my %n = ('games' => 0, 'differ' => 0, 'refused' => 0, 'fuse' => 0);
+my %n      = ('games' => 0, 'differ' => 0, 'refused' => 0, 'fuse' => 0);
 my $failed = 0;
-my %skip   = map { $_ => 1 } qw(hotspots_incomplete envelopes_incomplete ver);
-
-sub thawed ($blob) { return Storable::thaw(Compress::Zlib::uncompress($blob)) }
+my %skip   = map {$_ => 1} qw(hotspots_incomplete envelopes_incomplete ver);
+sub thawed ($blob) {return Storable::thaw(Compress::Zlib::uncompress($blob))}
 
 sub differing ($got, $want) {
-    my @keys = grep { !$skip{$_} } sort keys %{ { %$got, %$want } };
-    return grep { Gate::canon($got->{$_}) ne Gate::canon($want->{$_}) } @keys;
+    my @keys = grep {!$skip{$_}} sort keys %{ { %$got, %$want } };
+    return grep {Gate::canon($got->{$_}) ne Gate::canon($want->{$_})} @keys;
 }
-
 if ($opt{'spoil'}) {
     my ($gameid, $code, $fest_blob, $game_blob) = @{ $rows[0] };
     my $got = Games::Sokoban::Solver::Festival::Analysis::parse($code, 36_000);
@@ -64,17 +65,16 @@ if ($opt{'spoil'}) {
     $got = Games::Sokoban::Solver::Festival::Analysis::thaw(Games::Sokoban::Solver::Festival::Analysis::freeze($got));
     $got->{'width'} += 1;
     my @bad = differing($got, Games::Sokoban::Solver::Festival::Analysis::thaw($fest_blob));
-    if (@bad) { say "spoil: an altered width of game $gameid is reported (@bad) -- the gate fires" }
-    else      { say 'spoil: NOT CAUGHT'; $failed = 1 }
+    if   (@bad) {say "spoil: an altered width of game $gameid is reported (@bad) -- the gate fires"}
+    else        {say 'spoil: NOT CAUGHT'; $failed = 1}
 }
-
 my %time;
 for my $row (@rows) {
     my ($gameid, $code, $fest_blob, $game_blob, $tier) = @$row;
     ++$n{'games'};
     my $t0  = Time::HiRes::time();
-    my $got = eval { Games::Sokoban::Solver::Festival::Analysis::parse($code, 36_000) };
-    unless ($got) { say "REFUSED $gameid: " . (split /\n/, $@)[0]; ++$n{'refused'}; next }
+    my $got = eval {Games::Sokoban::Solver::Festival::Analysis::parse($code, 36_000)};
+    unless ($got) {say "REFUSED $gameid: " . (split /\n/, $@)[0]; ++$n{'refused'}; next}
     $time{$tier}[0] += Time::HiRes::time() - $t0;
     $time{$tier}[1]++;
     Games::Sokoban::Solver::Festival::Analysis::with_blok($got, thawed($game_blob)->{'blok'});
@@ -85,10 +85,13 @@ for my $row (@rows) {
     $got = Games::Sokoban::Solver::Festival::Analysis::thaw(Games::Sokoban::Solver::Festival::Analysis::freeze($got));
     my $want = Games::Sokoban::Solver::Festival::Analysis::thaw($fest_blob);
     my @bad  = differing($got, $want);
-    if (@bad) { say "game $gameid: fields differ (@bad)"; ++$n{'differ'} }
-    if ($got->{'hotspots_incomplete'} or $got->{'envelopes_incomplete'}) { say "game $gameid: a fuse fired under a budget of ten hours?!"; ++$n{'differ'} }
+    if (@bad) {say "game $gameid: fields differ (@bad)"; ++$n{'differ'}}
+    if ($got->{'hotspots_incomplete'} or $got->{'envelopes_incomplete'}) {
+        say "game $gameid: a fuse fired under a budget of ten hours?!";
+        ++$n{'differ'};
+    }
     printf {*STDERR} "\r%d  game %d tier %d: %.1f s", $n{'games'}, $gameid, $tier, Time::HiRes::time() - $t0;
-}
+} ## end for my $row (@rows)
 print {*STDERR} "\n";
 
 # The fuses, on game 104 under a budget already spent (-1): both fire at their
@@ -105,14 +108,20 @@ if ($opt{'fuse'}) {
     my $cut    = Games::Sokoban::Solver::Festival::Analysis::parse($code, -1);
     my $took   = Time::HiRes::time() - $t0;
     $n{'fuse'} = $cut->{'hotspots_incomplete'} + $cut->{'envelopes_incomplete'};
-    if ($n{'fuse'} == 2) { printf "fuse: game 104 under a spent budget: both fuses fired and are reported (%.1f s)\n", $took }
-    else                 { say "fuse: game 104 under a spent budget: hotspots $cut->{'hotspots_incomplete'}, envelopes $cut->{'envelopes_incomplete'} -- expected both"; $failed = 1 }
-    my $ok = eval { Games::Sokoban::Solver::Festival::Analysis::freeze($cut); 1 };
-    unless ($ok) { say "fuse: freeze refused the cut analysis: $@"; $failed = 1 }
+    if ($n{'fuse'} == 2) {printf "fuse: game 104 under a spent budget: both fuses fired and are reported (%.1f s)\n", $took}
+    else {
+        say
+"fuse: game 104 under a spent budget: hotspots $cut->{'hotspots_incomplete'}, envelopes $cut->{'envelopes_incomplete'} -- expected both";
+        $failed = 1;
+    }
+    my $ok = eval {Games::Sokoban::Solver::Festival::Analysis::freeze($cut); 1};
+    unless ($ok) {say "fuse: freeze refused the cut analysis: $@"; $failed = 1}
     my $whole = Games::Sokoban::Solver::Festival::Analysis::parse($code, 36_000);
-    if ($whole->{'hotspots_incomplete'} or $whole->{'envelopes_incomplete'}) { say 'fuse: game 104 with ten hours: a fuse fired?!'; $failed = 1 }
-}
-
+    if ($whole->{'hotspots_incomplete'} or $whole->{'envelopes_incomplete'}) {
+        say 'fuse: game 104 with ten hours: a fuse fired?!';
+        $failed = 1;
+    }
+} ## end if ($opt{'fuse'})
 say 'analysis time per game by tier (seconds):';
 printf "  %d %3d %8.2f\n", $_, $time{$_}[1], $time{$_}[0] / $time{$_}[1] for sort keys %time;
 $failed = 1 if $n{'differ'} or $n{'refused'};

@@ -42,17 +42,15 @@ package Games::Sokoban::Solver::Firstbet;
 #
 # This module stores nothing: the caller hands solve() the analysis of
 # Games::Sokoban::Solver::Parser as $gm (its blob() form) and owns the result.
-
 our $VERSION = '0.01';
-
 use v5.42;                                          # strict + warnings + the :5.42 feature bundle (signatures, say, ...)
 use experimental 'refaliasing', 'declared_refs';    # enables the features AND silences their experimental warnings
 use warnings FATAL => 'uninitialized';
 no warnings 'recursion';                            # odfs recurses deeply
-use Carp           ('confess');
-use Time::HiRes    ('tv_interval', 'gettimeofday');
-use Storable       ('thaw', 'dclone');
-use List::Util     ('max');
+use Carp        ('confess');
+use Time::HiRes ('tv_interval', 'gettimeofday');
+use Storable    ('thaw', 'dclone');
+use List::Util  ('max');
 use Compress::Zlib;
 use Term::ANSIColor;
 use Games::Sokoban::Solver::Console ('backline', 'backlinen', 'podil');
@@ -74,9 +72,9 @@ use Games::Sokoban::Solver::Path    ();             # rebuilt(): the finished pa
 # $RACE_FLAG, $RACE_GID, $MAX_GB -- five names ($MEMORY went on 2026-09-04,
 # $CORRAL on 2026-09-09; the reason is the same both times, a switch with one
 # used value).
-my (%Game, @Goal, @Target, %Cm, %Cmk, @Baggage, @Maze, $W);
-my (%Parent, $Start);         # seen-set/path chain + start position
-my ($PaintId, @Vis);          # paint() epoch + reach marks
+my (%Game,       @Goal, @Target, %Cm, %Cmk, @Baggage, @Maze, $W);
+my (%Parent,     $Start);     # seen-set/path chain + start position
+my ($PaintId,    @Vis);       # paint() epoch + reach marks
 my ($PaintId_fr, @Vis_fr);    # paint_fr/is_frozen twin of the pair above
 my @Buf;                      # paint()'s own wavefront, its working buffer only:
                               # the region's LENGTH used to be kept beside it in
@@ -96,22 +94,18 @@ my $BIG = 1_000_000;          # sentinel for Inf/unreachable entries in $DistRaw
 # -- ORDER puts its macro count there, Festival its plan length -- because it is
 # the only slot whose meaning was never the same twice anyway.
 my $ENDING = '%-12s %5d %3d %4d %-10s %6d %6d %12.4f %8s %8s %8s %8s %9s';
-
-my (
-    @Cg, %Pis, @Priority, $Has_hole, $Has_wall,
-    $Has_corridor, $Hole, $Wall, $Corridor, $Blok, $Gameid
-   );
-my $BlokVec;    # blok patterns as trimmed bit vectors, parallel to $Blok -- the hot vec test in is_bad
-my ($Nbox, %Sols, $Distance, $MaxP, $MaxVal, $corridors, $holes);
-my ($DistRaw, $Value);         # raw distance table + the mode's scorer code-ref
-my ($Route, $RouteBonus, $Has_cp, %CPath);
-my (%CPathIdx, @CPathArr, %ToGoal);    # conveyor {src}{tgt}=>index map / ordered edges / endpoint deliveries
-my ($RouteMoves, $RouteMust, $Has_routes);    # per-(box,goal) route moves / must_empty + presence flag
-my $Macro_step = 0;    # set while scoring a route-macro INTERMEDIATE: no route advantage
+my (@Cg, %Pis, @Priority, $Has_hole, $Has_wall, $Has_corridor, $Hole, $Wall, $Corridor, $Blok, $Gameid);
+my $BlokVec;                 # blok patterns as trimmed bit vectors, parallel to $Blok -- the hot vec test in is_bad
+my ($Nbox,       %Sols, $Distance, $MaxP, $MaxVal, $corridors, $holes);
+my ($DistRaw,    $Value);    # raw distance table + the mode's scorer code-ref
+my ($Route,      $RouteBonus, $Has_cp, %CPath);
+my (%CPathIdx,   @CPathArr,   %ToGoal);        # conveyor {src}{tgt}=>index map / ordered edges / endpoint deliveries
+my ($RouteMoves, $RouteMust,  $Has_routes);    # per-(box,goal) route moves / must_empty + presence flag
+my $Macro_step = 0;                            # set while scoring a route-macro INTERMEDIATE: no route advantage
 my ($Pex, %Tahy, $Bestbet, $pu);
-my @Blk;               # paint()'s box marks
-my @Buf_fr;            # paint_fr's own wavefront (boxes marked in @Vis_fr, no separate @Blk_fr)
-my @IsWall;            # cell-indexed "this cell is a wall" (fix_diagonals hot tests)
+my @Blk;                                       # paint()'s box marks
+my @Buf_fr;                                    # paint_fr's own wavefront (boxes marked in @Vis_fr, no separate @Blk_fr)
+my @IsWall;                                    # cell-indexed "this cell is a wall" (fix_diagonals hot tests)
 
 # Player-equivalence position classes: every key in the FORWARD search carries
 # the SMALLEST cell of the player's reachable region instead of the player's
@@ -129,17 +123,17 @@ my (%CanonMap, @Vis_c, @Buf_c, $PaintId_c, %SolsC, $SolvedLay, $ManOff);
 # extra pass in canon_key, so the other nine modes never pay for any of it.
 my $Feat_mode = 0;
 my (%FCellQ, @FCellKey, $FCellPtr);    # coordinate key -> queue / wheel order / wheel hand
-my %ExplMark;      # child key -> the explorer poradce points at it (set in tahy)
-my %RegCells;      # canonical key -> cells beyond the parent's region at first birth
-my %StanceIdx;     # stance cell -> [[box, target], ...], the %Cm inversion, once per game
-my (@RoomOf, @DoorAt);    # cell -> room id / doorway cell -> the door chain
+my %ExplMark;                          # child key -> the explorer poradce points at it (set in tahy)
+my %RegCells;                          # canonical key -> cells beyond the parent's region at first birth
+my %StanceIdx;                         # stance cell -> [[box, target], ...], the %Cm inversion, once per game
+my (@RoomOf, @DoorAt);                 # cell -> room id / doorway cell -> the door chain
 my $NRooms;
-my @PlanNeed;      # goal cell -> [cells its journey still needs] (out_of_plan)
+my @PlanNeed;                             # goal cell -> [cells its journey still needs] (out_of_plan)
 my (@PlanPair, @PlanInit, @PlanWaves);    # build_plan results (documented at the Plan section;
                                           # @PlanUnpaired stood here too -- built at the end of
                                           # build_plan, read by nothing)
 my $Plan_waves = 0;
-my (@Vis_ci, @FloorCells);    # island counter's own paint + floor list
+my (@Vis_ci, @FloorCells);                # island counter's own paint + floor list
 my $PaintId_ci = 0;
 
 # Matching-deadlock filter (Festival check_matching_deadlock analog). Hungarian
@@ -155,7 +149,7 @@ my $PaintId_ci = 0;
 #   * per-position ($Selective{$t} guard at the hook): a push onto a cell
 #     reaching ALL goals cannot introduce a new Hall violation.
 my (%ReachG, %Selective);    # per-game: cell->{reachable goals}, selective-cell flag
-my (%Rev, %ReachW);          # per-game: reverse push graph; per wall-set: goal->{cells that still reach it}
+my (%Rev,    %ReachW);       # per-game: reverse push graph; per wall-set: goal->{cells that still reach it}
 my $Walled_on    = 0;        # per-game: the wallified-matching filter can run at all
 my $Match_active = 0;        # per-game: a non-goal selective cell exists
 
@@ -232,7 +226,7 @@ my $SCREEN = 6;
 # with $reason='IGNORE' (not a real result). Non-race
 # callers set neither, so race_lost() is a cheap short-circuit.
 our ($RACE_FLAG, $RACE_GID);
-sub race_lost() { $RACE_FLAG && $RACE_GID && $RACE_FLAG->{$RACE_GID} }
+sub race_lost() {$RACE_FLAG && $RACE_GID && $RACE_FLAG->{$RACE_GID}}
 
 # RAM ceiling (GiB); 0 = off. Memory::used_gb() reads TOTAL system RAM used
 # (one kernel call), so this caps the WHOLE
@@ -240,12 +234,12 @@ sub race_lost() { $RACE_FLAG && $RACE_GID && $RACE_FLAG->{$RACE_GID} }
 # once. Checked at the ~7s progress checkpoints; over the cap ends
 # $reason='MEMCAP' (callers treat it like TIMEOUT).
 our $MAX_GB = 0;
-sub mem_over() { $MAX_GB && Games::Sokoban::Solver::Memory::used_gb() > $MAX_GB }
+sub mem_over() {$MAX_GB && Games::Sokoban::Solver::Memory::used_gb() > $MAX_GB}
 
 # tv_interval() can return a NEGATIVE elapsed time on Windows (system-clock
 # jitter). Floor every solve()-returned $doba at a tiny positive epsilon --
 # also guards the rate divisions against a zero elapsed.
-sub clamp_doba($doba) { $doba < 0.000001 ? 0.000001 : $doba }
+sub clamp_doba($doba) {$doba < 0.000001 ? 0.000001 : $doba}
 
 # The end-of-search line, coloured by outcome. Green solved it, yellow spent its
 # whole budget, white was told not to bother -- and RED is everything else, which
@@ -253,22 +247,22 @@ sub clamp_doba($doba) { $doba < 0.000001 ? 0.000001 : $doba }
 # UNSOLVABLE) is not a mode whose clock ran out, and until 2026-08-31 the two
 # looked identical here. Goes through backlinen -- this is the DURABLE line, the
 # one that must survive in the scrollback.
-sub barva($reason,$ending) {
-   return if $QUIET > 1;
-   state $colour = {'SOLVED', 'bright_green', 'TIMEOUT', 'bright_yellow', 'IGNORE', 'white' };
-   my $color = $colour->{$reason} // 'bright_red';
-   backlinen(Term::ANSIColor::colored($ending,$color));
+sub barva($reason, $ending) {
+    return if $QUIET > 1;
+    state $colour = { 'SOLVED', 'bright_green', 'TIMEOUT', 'bright_yellow', 'IGNORE', 'white' };
+    my $color = $colour->{$reason} // 'bright_red';
+    backlinen(Term::ANSIColor::colored($ending, $color));
 }
 
 # bad_init/bad_close still take the gameid / the solved flag their callers pass:
 # the twin's seam (FirstbetBerk) needs both, and the call sites are shared.
-sub bad_init($)        {%MemBad = (); %Tahy = ()}
-sub bad_close($)       {%MemBad = (); %Tahy = ()}
-sub setbad($p)         {$MemBad{$p} = 1}
-sub isbad($p)          {exists $MemBad{$p}}
-sub tahy_get($p)       {$Tahy{$p}}
-sub tahy_set($p, $k)   {$Tahy{$p} = $k}
-sub tahy_del($p)       {delete $Tahy{$p}}
+sub bad_init($)      {%MemBad     = (); %Tahy = ()}
+sub bad_close($)     {%MemBad     = (); %Tahy = ()}
+sub setbad($p)       {$MemBad{$p} = 1}
+sub isbad($p)        {exists $MemBad{$p}}
+sub tahy_get($p)     {$Tahy{$p}}
+sub tahy_set($p, $k) {$Tahy{$p} = $k}
+sub tahy_del($p)     {delete $Tahy{$p}}
 
 sub clearvars() {
     $Bestbet      = undef;
@@ -367,24 +361,31 @@ sub replay_check($path) {
     my $i    = -1;
     foreach my $ch (split //, $path) {
         ++$i;
-        my $d = $step{ lc $ch } // confess("the solution does not replay: step $i is '$ch'");
+        my $d  = $step{ lc $ch } // confess("the solution does not replay: step $i is '$ch'");
         my $to = $cell + $d;
         confess("the solution does not replay: step $i '$ch' walks into a wall")
-            if $to < 0 or $to > $#Maze or $Maze[$to] eq '9' or $Maze[$to] eq '1';
+            if $to < 0
+            or $to > $#Maze
+            or $Maze[$to] eq '9'
+            or $Maze[$to] eq '1';
         if (exists $box{$to}) {
             my $beyond = $to + $d;
             confess("the solution does not replay: step $i '$ch' pushes the box on cell $to against a wall or another box")
-                if $beyond < 0 or $beyond > $#Maze or $Maze[$beyond] eq '9' or $Maze[$beyond] eq '1' or exists $box{$beyond};
+                if $beyond < 0
+                or $beyond > $#Maze
+                or $Maze[$beyond] eq '9'
+                or $Maze[$beyond] eq '1'
+                or exists $box{$beyond};
             delete $box{$to};
             $box{$beyond} = 1;
         }
         $cell = $to;
-    }
+    } ## end foreach my $ch (split //, $path)
     for my $g (@Goal) {
         confess("the solution does not replay: after its last step the goal on cell $g holds no box") unless exists $box{$g};
     }
     return;
-}
+} ## end sub replay_check
 
 # THE FINISHED PATH IS WRITTEN AGAIN FROM ITS PUSHES (3.8, USER 2026-10-12): a
 # solution is a row of elementary pushes -- the player walks to a box and
@@ -449,6 +450,7 @@ sub get_path($best) {
         (undef, @sb) = unpack($pu, $son);
         %fh = map(($_, 1), @fb);
         %sh = map(($_, 1), @sb);
+
         # ONE box leaves and ONE arrives, or this is not a path. The lists are
         # counted, not just read at their first element: a link across two
         # pushes used to pass here whenever its first pair of cells happened
@@ -470,8 +472,8 @@ sub get_path($best) {
         else {
             $path .= cesta($cell, $man, \@fb) . $move;
         }
-        $cell = $source;    # the player ends where the box was
-        @fb   = @sb;
+        $cell   = $source;    # the player ends where the box was
+        @fb     = @sb;
         $father = $son;
     } ## end foreach my $son (@postup)
     return $path;
@@ -485,16 +487,16 @@ sub initvars_common($gameid, $gm, $mode) {
     bad_init($gameid);
     $Gameid    = $gameid;
     $Feat_mode = $mode eq 'FEATURE' ? 1 : 0;
-    %Game   = %{ thaw(uncompress($gm)); };
+    %Game      = %{ thaw(uncompress($gm)); };
     my $maze = $Game{'code'};
     $maze =~ tr/,//d;
     $maze =~ tr/45678/00233/;
     @Maze         = split(//a, $maze, 0);
     $Game{'maze'} = &dclone(\@Maze);
-    @IsWall       = map {$_ eq '9' ? 1 : 0} @Maze;    # fix_diagonals' hot occupancy test
+    @IsWall       = map {$_ eq '9' ? 1 : 0} @Maze;                          # fix_diagonals' hot occupancy test
     @Goal         = @{ $Game{'goal'}; };
     @Target       = ();
-    $Target[$_]   = 1 foreach @Goal;                  # cell-indexed goal flag
+    $Target[$_]   = 1 foreach @Goal;                                        # cell-indexed goal flag
     %Cm           = %{ $Game{'cm'};  };
     %Cmk          = %{ $Game{'cmk'}; };
     @Cg           = ();
@@ -506,17 +508,16 @@ sub initvars_common($gameid, $gm, $mode) {
     @Priority     = ();
     $Priority[$_] = $Game{'order'}{$_} foreach keys %{ $Game{'order'} };    # cell-indexed order rank
     ($Has_hole, $Has_wall, $Has_corridor) = @Game{ 'has_hole', 'has_wall', 'has_corridor' };
-    ($Blok, $BlokVec) = _blok_both($Game{'blok'});    # arrays (cold callers) + vecs (tahy hot path)
+    ($Blok, $BlokVec)                     = _blok_both($Game{'blok'});      # arrays (cold callers) + vecs (tahy hot path)
     $Hole     = &dclone($Game{'hole'})     if $Has_hole;
     $Wall     = &dclone($Game{'walls'})    if $Has_wall;
     $Corridor = &dclone($Game{'corridor'}) if $Has_corridor;
-
     _corral_geom();
-
-    $Pex = 'Games::Sokoban::Solver::Heap'->new;
+    $Pex       = 'Games::Sokoban::Solver::Heap'->new;
     %ExplMark  = ();
     %RegCells  = ();
     %StanceIdx = ();
+
     if ($Feat_mode) {    # invert %Cm once per game: which pushes does this stance serve?
         for my $b (keys %Cm) {
             my $tb = $Cm{$b};
@@ -587,16 +588,13 @@ sub _blok_both ($src) {
     }
     return (\%arr, \%vec);
 } ## end sub _blok_both
-
 ##############################################################################
 # ===== Engine ===============================
 ##############################################################################
-
 # The move generator and everything it needs: the reachability flood (paint),
 # the frozen-cluster check, the scorers, the deadlock battery, the fill/route
 # macros and tahy() itself. This is the hot core -- every search in the file
 # runs through tahy().
-
 # The canonicalization flood: paint the region of $man with @$bag as walls,
 # tracking its smallest cell -- the class representative. paint_fr shape
 # (boxes marked visited), min maintained inline: one compare per visited cell.
@@ -611,9 +609,9 @@ sub canon_key($man, $bag) {
         my $x = $Buf_c[$bh];
         foreach my $t (@{ $Cg[$x] }) {
             next if $Vis_c[$t] == $PaintId_c;
-            $Vis_c[$t] = $PaintId_c;
+            $Vis_c[$t]    = $PaintId_c;
             $Buf_c[$bt++] = $t;
-            $min = $t if $t < $min;
+            $min          = $t if $t < $min;
         }
     }
     my $key = pack($pu, $min, @$bag);
@@ -623,7 +621,7 @@ sub canon_key($man, $bag) {
     # children are born) -- the new ground this push opened. A second pass over
     # the flood's own buffer, so the nine other modes pay nothing per cell.
     if ($Feat_mode) {
-        my @new = grep {$Vis[$_] != $PaintId} @Buf_c[ 0 .. $bt - 1 ];
+        my @new = grep {$Vis[$_] != $PaintId} @Buf_c[0 .. $bt - 1];
         $RegCells{$key} = \@new if @new;
     }
     return $key;
@@ -706,7 +704,9 @@ sub is_frozen($man, @nomove) {
             foreach my $t (@{ $Cmk{$bx} }) {
                 next if exists $frozen{$t};
                 my $stance = $Cm{$bx}{$t};
-                next if exists $frozen{$stance};    # frozen box ON the stance blocks the push: paint_fr marks boxes in @Vis_fr, so a Vis-hit alone no longer distinguishes floor from a frozen-box cell -- re-check here
+                next
+                    if exists $frozen{$stance}
+                    ; # frozen box ON the stance blocks the push: paint_fr marks boxes in @Vis_fr, so a Vis-hit alone no longer distinguishes floor from a frozen-box cell -- re-check here
                 next unless $Vis_fr[$stance] == $PaintId_fr;
                 $movable = 1;
                 last;
@@ -722,7 +722,6 @@ sub is_frozen($man, @nomove) {
 } ## end sub is_frozen
 
 # --- FEATURE coordinates -----------------------------------------------------
-
 # Free-floor island count (Festival's connectivity): flood every floor cell
 # not under a box, own paint arrays -- @Vis/@Vis_fr/@Vis_c stay untouched.
 sub conn_islands($t_bag) {
@@ -759,7 +758,6 @@ sub build_rooms() {
     $NRooms = 0;
     my @floor = grep {defined $Cg[$_]} 0 .. $#Cg;
     return unless @floor;
-
     my (@num, @low, @par, %door);
     my $counter = 0;
     for my $root (@floor) {
@@ -776,7 +774,7 @@ sub build_rooms() {
                 ++$top->[1];
                 my $y = $nb->[$i];
                 next if $y == $par[$x];
-                if ($num[$y]) { $low[$x] = $num[$y] if $num[$y] < $low[$x] }
+                if ($num[$y]) {$low[$x] = $num[$y] if $num[$y] < $low[$x]}
                 else {
                     $par[$y] = $x;
                     $num[$y] = $low[$y] = ++$counter;
@@ -788,13 +786,13 @@ sub build_rooms() {
                 pop @stack;
                 my $p = $par[$x];
                 if ($p >= 0) {
-                    $low[$p] = $low[$x] if $low[$x] < $low[$p];
-                    $door{$p} = 1 if $p != $root && $low[$x] >= $num[$p];
+                    $low[$p]  = $low[$x] if $low[$x] < $low[$p];
+                    $door{$p} = 1        if $p != $root && $low[$x] >= $num[$p];
                 }
             }
-        }
+        } ## end while (@stack)
         $door{$root} = 1 if $rootkids > 1;
-    }
+    } ## end for my $root (@floor)
 
     # rooms = components of the floor minus the doorways
     for my $c (@floor) {
@@ -830,17 +828,17 @@ sub build_rooms() {
                 next unless $door{$y} && !$chain{$y};
                 $chain{$y} = 1;
                 push @cells, $y;
-                push @q, $y;
+                push @q,     $y;
             }
         }
         my %rooms;
         for my $c (@cells) {
             $rooms{ $RoomOf[$_] } = 1 for grep {$RoomOf[$_]} @{ $Cg[$c] // [] };
         }
-        next if keys(%rooms) < 2;    # a chain that joins nothing is not a door
+        next if keys(%rooms) < 2;          # a chain that joins nothing is not a door
         my $door = [[@cells], [keys %rooms]];
         $DoorAt[$_] = $door for @cells;    # every cell of the chain names the chain
-    }
+    } ## end for my $d (keys %door)
     return;
 } ## end sub build_rooms
 
@@ -866,7 +864,7 @@ sub room_groups($t_bag) {
             $up[$b] = $a;
             --$n;
         }
-    }
+    } ## end for my $d (0 .. $#DoorAt)
     return $n;
 } ## end sub room_groups
 
@@ -879,7 +877,7 @@ sub build_planneed() {
     for my $p (@PlanPair) {
         my ($goal, undef, undef, $pulls) = @$p;
         my %c;
-        for my $step (@$pulls) { $c{ $step->[0] } = 1; $c{ $step->[1] } = 1 }
+        for my $step (@$pulls) {$c{ $step->[0] } = 1; $c{ $step->[1] } = 1}
         delete $c{$goal};
         $PlanNeed[$goal] = [keys %c] if %c;
     }
@@ -894,7 +892,7 @@ sub out_of_plan($t_bag) {
     for my $goal (0 .. $#PlanNeed) {
         my $need = $PlanNeed[$goal] or next;
         next if exists $t_bag->{$goal};    # that goal is filled: journey over
-        for my $c (@$need) { $hit{$c} = 1 if exists $t_bag->{$c} && !$Target[$c] }
+        for my $c (@$need) {$hit{$c} = 1 if exists $t_bag->{$c} && !$Target[$c]}
     }
     return scalar keys %hit;
 }
@@ -907,8 +905,7 @@ sub feat_counts($pozice) {
     my %bag = map(($_, 1), @bb);
     return (plan_odometer(\@bb), conn_islands(\%bag), room_groups(\%bag), out_of_plan(\%bag));
 }
-
-sub feat_key($pozice) { join ',', feat_counts($pozice) }
+sub feat_key($pozice) {join ',', feat_counts($pozice)}
 
 # The lexicographic order the four counts are read in -- Festival's
 # is_better_score with the fields we have, same directions and the same "read
@@ -950,17 +947,17 @@ sub feat_advise($kids, $b_odo, $b_isl, $b_room, $b_out) {
                 : $crit == 1 ? $k->[2] < $b_isl
                 : $crit == 2 ? $k->[3] < $b_room
                 : $crit == 3 ? $k->[4] < $b_out
-                :              $k->[5];    # the explorer, marked in tahy()
+                :              $k->[5];            # the explorer, marked in tahy()
             next unless $speaks;
             $best = $k if !defined $best || feat_better($k, $best);
         }
         next unless $best;
         ++$n unless $best->[6];
         $best->[6] = 1;
-    }
+    } ## end for my $crit (0 .. 4)
     my $best;
     for my $k (@$kids) {
-        next if $k->[1] < $b_odo;
+        next       if $k->[1] < $b_odo;
         $best = $k if !defined $best || $k->[7] < $best->[7];
     }
     if ($best) {
@@ -971,7 +968,6 @@ sub feat_advise($kids, $b_odo, $b_isl, $b_room, $b_out) {
 } ## end sub feat_advise
 
 # --- the scorers -------------------------------------------------------------
-
 sub value_score($bx, $t, $t_bag) {
     my (@free, $index, $value);
     @free = grep(!exists $t_bag->{$_}, @Goal);
@@ -1027,7 +1023,7 @@ sub value_assign($bx, $t, $t_bag) {
         push @matrix, [map {$DistRaw->{$_}{$g} // $BIG} @bag];
     }
     return Games::Sokoban::Solver::Munkres::assign(\@matrix);
-} ## end sub value_assign
+}
 
 # Turn a raw box->goal distance table (values are counts or the string 'Inf'
 # for unreachable) into a numeric table with Inf/undef mapped to $BIG, so the
@@ -1062,7 +1058,7 @@ sub value_move_sum($bx, $t, $t_bag) {
 # bands), lower is better -- a route-biased search. $t_bag is unused (scores
 # the move itself).
 sub value_route($bx, $t, $t_bag) {
-    return 0 if $Macro_step;    # macro intermediate: no route advantage
+    return 0 if $Macro_step;                      # macro intermediate: no route advantage
     my $r = $Route->{$bx};
     my $v = 0;
     $v -= 2 if $r          && $r->{$t};           # (bx -> t) on an optimal box route
@@ -1084,7 +1080,6 @@ sub value_flow($bx, $t, $t_bag) {
         $route -= 2 if $r          && $r->{$t};
         $route -= 1 if $CPath{$bx} && $CPath{$bx}{$t};
     }
-
     my $sum = 0;
     for my $b (keys %$t_bag) {
         next if $Target[$b];    # a box already on a goal: no term
@@ -1101,7 +1096,6 @@ sub value_flow($bx, $t, $t_bag) {
 } ## end sub value_flow
 
 # --- the deadlock battery ----------------------------------------------------
-
 sub is_bad($bx, $t, $t_bag, $vb = undef) {
 
     # blok check, two gears: the hot tahy() path maintains the child box BIT
@@ -1133,7 +1127,7 @@ sub is_bad($bx, $t, $t_bag, $vb = undef) {
                 return 'blok';
             }
         }
-    }
+    } ## end else [ if (defined $vb) ]
     if ($Has_wall) {
         if (defined(my $wall = $Wall->{$t})) {
             foreach my $w (@$wall) {
@@ -1269,15 +1263,14 @@ sub fix_diagonals ($bag, $wall) {
         $cand{ $b - 1 }  = 1;
         $cand{ $b + 1 }  = 1;
     }
-
     my (@inner, @pocket);
     for my $p (keys %cand) {
-        next if $p < 0 || $p >= $ncell;    # before the arrays: a negative index reads from the END
+        next if $p < 0 || $p >= $ncell;                     # before the arrays: a negative index reads from the END
         my $i = int($p / $W);
         my $j = $p % $W;
         next if $i < 1 || $i > $h - 2 || $j < 1 || $j > $W - 2;
         next if $IsWall[$p] || $w{$p} || $bag->{$p};
-        next if $Vis[$p] == $PaintId;      # the player's own region
+        next if $Vis[$p] == $PaintId;                       # the player's own region
         my $n = $p - $W;
         next unless $IsWall[$n] || $w{$n} || $bag->{$n};    # p interior: neighbours in bounds
         $n = $p + $W;
@@ -1288,8 +1281,7 @@ sub fix_diagonals ($bag, $wall) {
         next unless $IsWall[$n] || $w{$n} || $bag->{$n};
         $inner[$p] = 1;
         push @pocket, $p;
-    }
-
+    } ## end for my $p (keys %cand)
     my (@dr, @dl, @chain);
     for my $p (@pocket) {    # order-free: this scan only READS %w
         my $i = int($p / $W);
@@ -1297,19 +1289,21 @@ sub fix_diagonals ($bag, $wall) {
         for my $dir (1, -1) {
             my $up = $dir == 1 ? $p - $W - 1 : $p - $W + 1;
             my $sd = $dir == 1 ? $p - 1      : $p + 1;
-            next unless ($IsWall[$up] || $w{$up} || $bag->{$up})
-                || (($IsWall[ $p - $W ] || $w{ $p - $W }) && ($IsWall[$sd] || $w{$sd}));
+            next
+                unless ($IsWall[$up] || $w{$up} || $bag->{$up})
+                || (($IsWall[$p - $W] || $w{ $p - $W }) && ($IsWall[$sd] || $w{$sd}));
             my $k = 1;
-            ++$k while $inner[ ($i + $k) * $W + $j + $dir * $k ];
+            ++$k while $inner[($i + $k) * $W + $j + $dir * $k];
             my $ep = ($i + $k) * $W + $j + $dir * $k;
             my $ed = $dir == 1 ? $ep - 1 : $ep + 1;
-            next unless ($IsWall[$ep] || $w{$ep} || $bag->{$ep})
-                || (($IsWall[ $ep - $W ] || $w{ $ep - $W }) && ($IsWall[$ed] || $w{$ed}));
+            next
+                unless ($IsWall[$ep] || $w{$ep} || $bag->{$ep})
+                || (($IsWall[$ep - $W] || $w{ $ep - $W }) && ($IsWall[$ed] || $w{$ed}));
             if   ($dir == 1) {$dr[$p] = $k}
             else             {$dl[$p] = $k}
-        }
+        } ## end for my $dir (1, -1)
         push @chain, $p if $dr[$p] || $dl[$p];
-    }
+    } ## end for my $p (@pocket)
 
     # Walls go down as the scan proceeds, exactly as the original does: both
     # the goal test and the wallification read the board being mutated. So
@@ -1322,7 +1316,7 @@ sub fix_diagonals ($bag, $wall) {
             my ($k, $dir) = @$set;
             next unless $k;
             my $goal = 0;
-            for my $n (0 .. $k - 1) {$goal = 1 if $Target[ ($i + $n) * $W + $j + $dir * $n ]}
+            for my $n (0 .. $k - 1) {$goal = 1 if $Target[($i + $n) * $W + $j + $dir * $n]}
             next if $goal;
             for my $n (0 .. $k - 1) {
                 my $c = ($i + $n) * $W + $j + $dir * $n;
@@ -1336,8 +1330,8 @@ sub fix_diagonals ($bag, $wall) {
             my $e = ($i + $k) * $W + $j + $dir * $k;
             $w{$e} = 1 if $IsWall[$e] || $w{$e} || $bag->{$e};
             $w{ $e - $dir } = 1;
-        }
-    }
+        } ## end for my $set ([$dr[$p], ...])
+    } ## end for my $p (sort {$a <=>...})
     delete $w{$_} foreach grep {!$bag->{$_}} keys %w;    # report boxes only
     return \%w;
 } ## end sub fix_diagonals
@@ -1365,7 +1359,7 @@ sub walled_reach ($wall, $key) {
             }
         }
         $by_goal{$g} = \%seen;
-    }
+    } ## end for my $g (@Goal)
     return $ReachW{$key} = \%by_goal;
 } ## end sub walled_reach
 
@@ -1387,8 +1381,8 @@ sub matching_dead_walled ($boxes, $wall) {
     return 0 unless @b;
     my @g = grep {!$wall->{$_}} @Goal;
     return 1 if @b > @g;
-
     my (@matrix, %union);
+
     for my $b (@b) {
         my $rg = $ReachG{$b} or return 0;    # missing data: never prune
         my @row;
@@ -1399,12 +1393,11 @@ sub matching_dead_walled ($boxes, $wall) {
         }
         push @matrix, \@row;
     }
-    return 1 if keys %union < @b;            # Hall pre-check, skips the Hungarian
+    return 1 if keys %union < @b;    # Hall pre-check, skips the Hungarian
     return Games::Sokoban::Solver::Munkres::assign(\@matrix) >= $BIG ? 1 : 0;
 } ## end sub matching_dead_walled
 
 # --- the macros --------------------------------------------------------------
-
 # Dead-end fill macro, shared by the hole and the 'one'-corridor cases. A
 # 'one' corridor is, for filling, just a hole: once a box is pushed onto the
 # entry it can only go deeper, so the goals fill deepest-first in a forced
@@ -1425,7 +1418,7 @@ sub _macro_fill($cells_ref, $levels, $perm, $nb_ref, $man_start) {
     return () unless defined $levels;
     my @cells   = @$cells_ref;
     my %cur_bag = map(($_, 1), @$nb_ref);
-    my $k       = (grep {exists $cur_bag{$_}} @cells[ 1 .. $#cells ]) - $perm;
+    my $k       = (grep {exists $cur_bag{$_}} @cells[1 .. $#cells]) - $perm;
     return () if $k < 0 || $k >= @$levels;
     my $level  = $levels->[$k];
     my $target = $level->{'target'};
@@ -1443,13 +1436,13 @@ sub _macro_fill($cells_ref, $levels, $perm, $nb_ref, $man_start) {
         # push_pos must be reachable FLOOR. paint_fr marks boxes in @Vis_fr
         # (as walls), so a Vis-hit on a box cell would falsely read as
         # reachable -- exclude a box-occupied stance.
-        unless ($Vis_fr[$push_pos] == $PaintId_fr && !grep { $_ == $push_pos } @cur_nb) {
+        unless ($Vis_fr[$push_pos] == $PaintId_fr && !grep {$_ == $push_pos} @cur_nb) {
 
             # Player cannot reach this push stance -- stop the macro here and
             # turn the last (so-far intermediate) position into a real queued
             # one by giving it a score.
             if (@chain && !defined $chain[-1]) {
-                my ($pf, $pt) = @{ $pushes->[$pi - 1] }[ 0, 1 ];
+                my ($pf, $pt) = @{ $pushes->[$pi - 1] }[0, 1];
                 $chain[-1] = $Value->($pf, $pt, { map(($_, 1), @cur_nb) });
             }
             last;
@@ -1500,10 +1493,10 @@ sub _route_deliver($baggage, $bx, $moves, $me) {
     my @fnb   = sort {$a <=> $b} map {$_ == $bx ? $g : $_} @$baggage;
     my $final = _ck($moves->[-2], \@fnb);
     return () if exists $Parent{$final};
-
     my @cur  = @$baggage;
     my $prev = $bx;
     my @chain;
+
     for my $i (0 .. $#$moves) {
         my $next = $moves->[$i];
         my @nb   = grep {$_ != $prev} @cur;
@@ -1514,7 +1507,6 @@ sub _route_deliver($baggage, $bx, $moves, $me) {
         return () if is_bad($prev, $next, \%nbag);
         my $child = _ck($prev, \@nb);
         return () if isbad($child);
-
         my $last = $i == $#$moves;
         $Macro_step = !$last;
         my $sc = $Value->($prev, $next, \%nbag);
@@ -1522,7 +1514,7 @@ sub _route_deliver($baggage, $bx, $moves, $me) {
         push @chain, $child, ($last ? $sc : [$sc]);
         @cur  = @nb;
         $prev = $next;
-    }
+    } ## end for my $i (0 .. $#$moves)
     return @chain;
 } ## end sub _route_deliver
 
@@ -1549,9 +1541,12 @@ sub _cp_deliver($baggage, $start_idx) {
         unless (exists $bag{$s} && !exists $bag{$t}) {$missed = 1; next;}
         my $stance = $Cm{$s}{$t};
         unless (defined $stance) {$missed = 1; next;}
-        if (defined $man) {    # first ride step's stance was checked by the caller on @Vis
+        if     (defined $man) {                         # first ride step's stance was checked by the caller on @Vis
             paint_fr($man, @cur);
-            unless ($Vis_fr[$stance] == $PaintId_fr && !grep {$_ == $stance} @cur) {$missed = 1; next;}
+            unless ($Vis_fr[$stance] == $PaintId_fr && !grep {$_ == $stance} @cur) {
+                $missed = 1;
+                next;
+            }
         }
         my @nb = grep {$_ != $s} @cur;
         my $j  = 0;
@@ -1559,7 +1554,7 @@ sub _cp_deliver($baggage, $start_idx) {
         splice(@nb, $j, 0, $t);
         my %nbag  = map(($_, 1), @nb);
         my $child = _ck($s, \@nb);
-        if (exists $Parent{$child}) {$missed = 1; last;}    # dedup: its generator already offered the rest
+        if (exists $Parent{$child}) {$missed = 1; last;}                    # dedup: its generator already offered the rest
         if (is_bad($s, $t, \%nbag)) {set_bad($child); $missed = 1; last;}
         if (isbad($child))          {$missed = 1; last;}
         my $sc = $Value->($s, $t, \%nbag);
@@ -1591,7 +1586,10 @@ GOAL: foreach my $g (@free) {
             my $stance = $Cm{$s}{$t};
             unless (defined $stance) {$ok = 0; last;}
             paint_fr($dman, @dcur);
-            unless ($Vis_fr[$stance] == $PaintId_fr && !grep {$_ == $stance} @dcur) {$ok = 0; last;}
+            unless ($Vis_fr[$stance] == $PaintId_fr && !grep {$_ == $stance} @dcur) {
+                $ok = 0;
+                last;
+            }
             my @nb = grep {$_ != $s} @dcur;
             my $j  = 0;
             ++$j while $j < @nb && $nb[$j] < $t;
@@ -1660,7 +1658,7 @@ sub _corral_geom() {
     @CFloor = ();
     @Nb4    = ();
     @Nb8    = ();
-    my $n = scalar @Maze;
+    my $n     = scalar @Maze;
     my @floor = (0) x $n;
     for my $p (0 .. $n - 1) {
         next if $Maze[$p] eq '9' or $Maze[$p] eq '1';
@@ -1683,13 +1681,13 @@ sub _corral_geom() {
         $Nb4[$p] = \@n4;
         $Nb8[$p] = \@n8;
     }
-    @CComp   = (0) x $n;
-    @CInC    = (0) x $n;
-    @CStamp  = (0) x $n;
-    @CTouch  = (0) x $n;
+    @CComp  = (0) x $n;
+    @CInC   = (0) x $n;
+    @CStamp = (0) x $n;
+    @CTouch = (0) x $n;
     ($CGen, $CTag, $CTouchGen) = (0, 0, 0);
     return;
-}
+} ## end sub _corral_geom
 
 # The boxes on the corral's boundary -- the 8-neighbourhood of its cells -- left
 # stamped in @CTouch with the returned generation. That stamp is the OCCUPANCY
@@ -1723,22 +1721,21 @@ sub _corral_try($g, $pid, $c0, $nc) {
     $used[$c0] = 1;
     my @ccells = @{ $CorralCells[$c0] };
     $CInC[$_] = $tag foreach @ccells;
-
     my $cboxes = _corral_boxes($pid, \@ccells);
-    my $btag   = $CTouchGen;    # only a box stamped with this blocks anything
+    my $btag   = $CTouchGen;                      # only a box stamped with this blocks anything
 
     # work left inside: an uncovered goal in the corral, or a boundary box
     # off-goal. Without either there is nothing to be gained by restricting.
     my $active = 0;
-    for my $p (@ccells)   {$active = 1, last if $Target[$p]}
-    if (!$active) { for my $b (@$cboxes) {$active = 1, last unless $Target[$b]} }
+    for my $p (@ccells) {$active = 1, last if $Target[$p]}
+    if (!$active) {for my $b (@$cboxes) {$active = 1, last unless $Target[$b]}}
     return undef unless $active;
 
     # a boundary box whose push reaches a further area he cannot enter either:
     # swallow that area and ask again
-    EXPAND: while (1) {
+EXPAND: while (1) {
         my $add;
-        BOX: for my $b (@$cboxes) {
+    BOX: for my $b (@$cboxes) {
             my ($in, $out) = (0, 0);
             foreach my $q (@{ $Nb4[$b] }) {
                 if    ($CInC[$q] == $tag)    {$in  = 1}
@@ -1759,14 +1756,14 @@ sub _corral_try($g, $pid, $c0, $nc) {
                     if ($c and !$used[$c]) {$add = $c; last BOX}
                 }
             }
-        }
+        } ## end BOX: for my $b (@$cboxes)
         last EXPAND unless defined $add;
         $used[$add] = 1;
         push @ccells, @{ $CorralCells[$add] };
         $CInC[$_] = $tag foreach @{ $CorralCells[$add] };
-        $cboxes = _corral_boxes($pid, \@ccells);
-        $btag   = $CTouchGen;
-    }
+        $cboxes   = _corral_boxes($pid, \@ccells);
+        $btag     = $CTouchGen;
+    } ## end EXPAND: while (1)
 
     # Sealed? A push with BOTH stance and landing outside breaks the argument.
     # Blocked ONLY by walls and boundary boxes -- an escape another box merely
@@ -1791,27 +1788,25 @@ sub _corral_try($g, $pid, $c0, $nc) {
             return undef unless $Vis[$st] == $pid;
         }
     }
-
     my %allowed;
     for my $b (@$cboxes) {
         foreach my $t (@{ $Cmk{$b} }) {
             next if $CTouch[$t] == $btag or $CInC[$t] != $tag;
             my $st = $Cm{$b}{$t};
             next unless defined $st;
-            next if $CTouch[$st] == $btag or $CInC[$st] == $tag;
+            next             if $CTouch[$st] == $btag or $CInC[$st] == $tag;
             $allowed{$b} = 1 if $Vis[$st] == $pid;
         }
     }
     return %allowed ? \%allowed : undef;
-}
+} ## end sub _corral_try
 
 # Returns the set of boxes the search may still touch, or undef when no corral
 # holds. Call ONLY after paint($man, @baggage).
 sub corral_allowed($bag) {
     my $g   = ++$CGen;
     my $pid = $PaintId;
-
-    my $nc = 0;
+    my $nc  = 0;
     @CorralCells = (undef);
     for my $p (@CFloor) {
         next if $Vis[$p] == $pid or $Blk[$p] == $pid or $CStamp[$p] == $g;
@@ -1820,7 +1815,7 @@ sub corral_allowed($bag) {
         $CStamp[$p] = $g;
         $CComp[$p]  = $c;
         for (my $i = 0; $i < @s; ++$i) {
-            foreach my $t (@{ $Cg[ $s[$i] ] }) {
+            foreach my $t (@{ $Cg[$s[$i]] }) {
                 next if $CStamp[$t] == $g or $Vis[$t] == $pid or $Blk[$t] == $pid;
                 $CStamp[$t] = $g;
                 $CComp[$t]  = $c;
@@ -1828,30 +1823,27 @@ sub corral_allowed($bag) {
             }
         }
         $CorralCells[$c] = \@s;
-    }
+    } ## end for my $p (@CFloor)
     return undef unless $nc;
-
     my @cand = (0) x ($nc + 1);
     foreach my $bx (@$bag) {
         foreach my $t (@{ $Cmk{$bx} }) {
             next if $Blk[$t] == $pid;
             my $st = $Cm{$bx}{$t};
-            next unless defined $st and $Vis[$st] == $pid;
+            next unless defined $st       and $Vis[$st] == $pid;
             next unless $CStamp[$t] == $g and $CComp[$t];
-            $cand[ $CComp[$t] ] = 1;
+            $cand[$CComp[$t]] = 1;
         }
     }
-
     for my $c (1 .. $nc) {
         next unless $cand[$c];
         my $allowed = _corral_try($g, $pid, $c, $nc);
         return $allowed if defined $allowed;
     }
     return undef;
-}
+} ## end sub corral_allowed
 
 # --- the move generator ------------------------------------------------------
-
 sub tahy($pozice) {
     my ($man, @baggage) = unpack($pu, $pozice);
     my ($s, $child, @tahy, @nomove, @children, %bags);
@@ -1888,7 +1880,7 @@ sub tahy($pozice) {
             my %nbag = map(($_, 1), @nb);
             my ($t)  = grep {!exists $bags{$_}} @nb;         # the pushed box's new cell
             my ($bx) = grep {!exists $nbag{$_}} @baggage;    # the cell it left == player after the push
-            my $sc = $Value->($bx, $t, \%nbag);
+            my $sc   = $Value->($bx, $t, \%nbag);
             my @chain;
             if ($Has_hole) {
                 if (defined(my $hole = $Hole->{$bx} && $Hole->{$bx}{$t})) {
@@ -1903,11 +1895,11 @@ sub tahy($pozice) {
             if (@chain) {push @tahy, $ch, [$sc], @chain;}
             else        {push @tahy, $ch, $sc;}
             push @children, $ch;
-        }
-        if    (!@children)            {tahy_del($pozice)}                # all dead now: the tail set_bads $pozice
-        elsif (@children != @$cached) {tahy_set($pozice, [@children])}   # re-store pruned of the now-bad
+        } ## end foreach my $ch (@$cached)
+        if    (!@children)            {tahy_del($pozice)}                 # all dead now: the tail set_bads $pozice
+        elsif (@children != @$cached) {tahy_set($pozice, [@children])}    # re-store pruned of the now-bad
         return _tahy_macros($pozice, $man, \@baggage, \%bags, \@tahy);
-    }
+    } ## end if (defined(my $cached...))
 
     # $vb = the box set as a bit vector, mutated in LOCKSTEP with %bags below,
     # so is_bad's hot blok test is one string AND per pattern. Built once per
@@ -1920,7 +1912,6 @@ sub tahy($pozice) {
     # child GENERATION only, never the $movable scan below: @nomove feeds
     # is_frozen, and a box withheld by the corral is not an immovable box.
     my $callow = corral_allowed(\@baggage);
-
     foreach my $bx (@baggage) {
         my $movable = 0;
         my $cskip   = $callow && !$callow->{$bx};
@@ -1968,7 +1959,6 @@ sub tahy($pozice) {
             }
             $bags{$t} = 1;    # %bags now == child box-set
             vec($vb, $t, 1) = 1;
-
             my $bad = is_bad($bx, $t, \%bags, $vb);
             if ($bad) {
                 set_bad $child;
@@ -2029,7 +2019,7 @@ sub tahy($pozice) {
                     push @tahy, $child, $sc;
                     push @children, $child;
                 }
-            } ## end else [ if (is_bad($bx, $t, \%bags...))]
+            } ## end else [ if ($bad) ]
             delete $bags{$t};    # undo the mutation before the next candidate
             vec($vb, $t, 1) = 0;
         } ## end foreach my $t (@{ $Cmk{$bx}...})
@@ -2104,7 +2094,7 @@ sub tahy($pozice) {
                 set_bad $pozice;
                 return ();
             }
-        }
+        } ## end if (%wall)
     } ## end if ($Walled_on)
     return _tahy_macros($pozice, $man, \@baggage, \%bags, \@tahy, $skipped);
 } ## end sub tahy
@@ -2130,16 +2120,16 @@ sub _tahy_macros($pozice, $man, $baggage, $bags, $tahy, $skipped = 0) {
             my $rb = $RouteMoves->{$bx} or next;
             for my $g (@open) {
                 my $moves = $rb->{$g} or next;
-                next unless @$moves >= 2;              # 1-push delivery is just an ordinary move
+                next unless @$moves >= 2;                              # 1-push delivery is just an ordinary move
                 my $first = $moves->[0];
-                next if $bags{$first};                 # first box target occupied
+                next if $bags{$first};                                 # first box target occupied
                 my $st1 = $Cm{$bx}{$first};
                 next unless defined $st1 && $Vis[$st1] == $PaintId;    # player reaches the first stance now
                 my @chain = _route_deliver(\@baggage, $bx, $moves, $RouteMust->{$bx}{$g}) or next;
                 push @tahy, @chain;
             }
         }
-    }
+    } ## end if ($Has_routes)
 
     # Conveyor-delivery macro (cp package): a box standing on a conveyor edge
     # source with the target free and the push stance reachable NOW offers the
@@ -2166,10 +2156,9 @@ sub _tahy_macros($pozice, $man, $baggage, $bags, $tahy, $skipped = 0) {
                 my @ride = _cp_deliver(\@baggage, $row->{$t}) or next;
                 $ride[-1] = $ride[-1][0];
                 push @tahy, @ride;
-            }
-        }
-    }
-
+            } ## end for my $t (keys %$row)
+        } ## end for my $bx (@baggage)
+    } ## end if ($Has_cp && $CP_mode_ok)
     if (@tahy) {
         return @tahy;
     }
@@ -2199,7 +2188,6 @@ sub initvars_score($mode) {
     # feed it; PUSH_ASSIGN/MOVE_SUM/FLOW run their own bodies over RAW tables.
     # MOVE_SUM keeps its baseline behavior: no cp bonus, no to_end hook.
     $CP_mode_ok = $mode eq 'MOVE_SUM' ? 0 : 1;
-
     if ($Feat_mode) {
 
         # Since 3.4 FEATURE scores every queued child after all (the 2.15
@@ -2216,7 +2204,7 @@ sub initvars_score($mode) {
         $MaxVal   = $Game{'maxval_steps'} // $Game{'maxval_push'};
         $Distance = &dclone($Game{'steps_quad'} // $Game{'zbytek'});
         $Value    = \&value_score;
-    }
+    } ## end if ($Feat_mode)
     elsif ($mode eq 'PUSH_ASSIGN') {
 
         # Hungarian min-cost assignment over raw push distances
@@ -2278,7 +2266,7 @@ sub initvars_score($mode) {
                 my $r = $row->{$g};
                 if (ref $r eq 'ARRAY') {    # packed (new Parser)
                     $RouteMoves->{$bx}{$g} = [unpack 'n*', $r->[0]];
-                    $RouteMust->{$bx}{$g}  = {map(($_, 1), unpack 'n*', $r->[1])};
+                    $RouteMust->{$bx}{$g}  = { map(($_, 1), unpack 'n*', $r->[1]) };
                 }
                 else {                      # rich record (older blobs)
                     $RouteMoves->{$bx}{$g} = $r->{'moves'};
@@ -2344,13 +2332,13 @@ sub initvars_score($mode) {
                 $ReachG{$c}{$g} = 1 if defined $v && $v ne 'Inf';
             }
         }
-        $ReachG{$_}{$_} = 1 foreach @Goal;    # self-edge: a box on its goal reaches it
+        $ReachG{$_}{$_} = 1 foreach @Goal;                       # self-edge: a box on its goal reaches it
         my $ng         = scalar @Goal;
         my $has_ng_sel = 0;
         for my $c (keys %ReachG) {
             next unless keys %{ $ReachG{$c} } < $ng;
             $Selective{$c} = 1;
-            $has_ng_sel = 1 unless $Target[$c];    # a NON-GOAL selective cell = a real fire driver
+            $has_ng_sel = 1 unless $Target[$c];                  # a NON-GOAL selective cell = a real fire driver
         }
         $Match_active = $has_ng_sel;
     }
@@ -2366,16 +2354,13 @@ sub initvars_score($mode) {
         push @{ $Rev{$_} }, $c foreach @{ $Cmk{$c} };
     }
 } ## end sub initvars_score
-
 ##############################################################################
 # ===== Forward =============================
 ##############################################################################
-
 # FORWARD: the priority-queue best-first search the scoring portfolio runs on
 # (PUSH_SCORE / MOVE_SCORE / PUSH_ASSIGN / MOVE_SUM / ROUTE / FLOW), plus the
 # FEATURE wheel. The hottest loop in the project -- it pops a position, asks
 # tahy() for its children and threads them into %Parent.
-
 sub solve_forward($limit, $mode) {
     my $gameid = $Gameid;
     my ($pozice, $nopen, $MaxOpen, $counter, $timer, $cas, $tick, $elapsed, $doba, $reason, $path, $plen, $steps, $bc, $ending);
@@ -2387,17 +2372,16 @@ sub solve_forward($limit, $mode) {
         $FCellPtr = 0;
         $FCellQ{$key}->add($Start, 0);
     }
-    else { $Pex->add($Start, 0) }
+    else {$Pex->add($Start, 0)}
     $nopen   = 1;
     $MaxOpen = 1;
     $bc      = 0;
     $counter = 0;                   # may stay 0 if a trivial game solves on the first pop
     $reason  = 'UNSOLVABLE';
     $cas     = time();
-    $tick    = $cas;    # the one-second gate for the race flag; $cas is the screen's
+    $tick    = $cas;                # the one-second gate for the race flag; $cas is the screen's
     $timer   = [&gettimeofday()];
 LMAIN: while ($nopen) {
-
         my $pweight = 0;
         if ($Feat_mode) {
 
@@ -2408,7 +2392,7 @@ LMAIN: while ($nopen) {
             # to it.
             my $n = @FCellKey;
             my $i = 0;
-            ++$i while $i < $n && !$FCellQ{ $FCellKey[ ($FCellPtr + $i) % $n ] }->size;
+            ++$i while $i < $n && !$FCellQ{ $FCellKey[($FCellPtr + $i) % $n] }->size;
             confess "\nFEATURE: $nopen positions open but every cell is empty" if $i == $n;
             my $j = ($FCellPtr + $i) % $n;
             $FCellPtr = ($j + 1) % $n;
@@ -2416,12 +2400,11 @@ LMAIN: while ($nopen) {
             my $node = $Q->[0];
             $pweight = $node->[0] if ref $node;
             $pozice  = $Q->next;
-        }
+        } ## end if ($Feat_mode)
         else {
             $pozice = $Pex->next;
         }
         --$nopen;
-
         if (exists $MemBad{$pozice}) {
             next;
         }
@@ -2464,13 +2447,13 @@ LMAIN: while ($nopen) {
         # And whatever these three let through, the finished path is replayed
         # before it is returned (replay_check).
         my $chain_parent = $pozice;
-        my $broken       = 0;    # the step before this one in its chain was lost
-        my @fkids;    # feature mode: this expansion's queueable children, decided after the loop
+        my $broken       = 0;         # the step before this one in its chain was lost
+        my @fkids;                    # feature mode: this expansion's queueable children, decided after the loop
         foreach my ($child, $score)(@tahy) {
             ++$bc;
-            my $start = ref $score;                                # [num] chain-start marker
-            my $real  = $start ? $score->[0] : $score;
-            my $ends  = (defined $real && !$start) ? 1 : 0;        # a plain score closes the thread
+            my $start = ref $score;                                          # [num] chain-start marker
+            my $real  = $start                     ? $score->[0] : $score;
+            my $ends  = (defined $real && !$start) ? 1           : 0;        # a plain score closes the thread
             if (exists $MemBad{$child}) {
                 $broken       = $ends ? 0 : 1;
                 $chain_parent = $pozice;
@@ -2500,7 +2483,7 @@ LMAIN: while ($nopen) {
             # terminal: the player-independent layout test (all goals filled --
             # one substr/eq on the key's boxes tail when the solved layout is
             # unique), or a P1 park CLASS (%SolsC)
-            if (   (defined $SolvedLay ? substr($child, $ManOff) eq $SolvedLay : _lay_solved($child))
+            if ((defined $SolvedLay ? substr($child, $ManOff) eq $SolvedLay : _lay_solved($child))
                 || exists $SolsC{$child})
             {
                 $Bestbet = $child;
@@ -2523,7 +2506,7 @@ LMAIN: while ($nopen) {
                 ++$nopen;
                 $MaxOpen      = $nopen if $nopen > $MaxOpen;
                 $chain_parent = $start ? $child : $pozice;
-            }
+            } ## end if (defined $real)
             else {
                 $chain_parent = $child;
             }
@@ -2540,42 +2523,41 @@ LMAIN: while ($nopen) {
         if (@fkids) {
             feat_advise(\@fkids, $fb_odo, $fb_isl, $fb_room, $fb_out);
             for my $k (@fkids) {
-                my $key = join ',', @$k[ 1 .. 4 ];
+                my $key = join ',', @$k[1 .. 4];
                 my $cq  = $FCellQ{$key};
                 unless ($cq) {    # a coordinate nobody has reached before: its own queue, its own turn of the wheel
                     $cq = $FCellQ{$key} = 'Games::Sokoban::Solver::Heap'->new;
                     push @FCellKey, $key;
                 }
                 my $sc = $k->[7];
-                $cq->add($k->[0],
-                    int($pweight) + ($k->[6] ? 0 : 1)
-                        + 0.5 + $sc / (2 * (abs($sc) + ($MaxVal || 1000))));
+                $cq->add($k->[0], int($pweight) + ($k->[6] ? 0 : 1) + 0.5 + $sc / (2 * (abs($sc) + ($MaxVal || 1000))));
                 ++$nopen;
                 $MaxOpen = $nopen if $nopen > $MaxOpen;
             }
-        }
+        } ## end if (@fkids)
     } ## end LMAIN: while ($nopen)
     continue {
         unless (++$counter % 100) {
             $doba = tv_interval($timer);
             if ($limit and $doba > $limit) {$reason = 'TIMEOUT'; last LMAIN}    # the budget, promptly
             $elapsed = time();
-            if ($elapsed != $tick) {    # once a second
+            if ($elapsed != $tick) {                                            # once a second
                 $tick = $elapsed;
-                if (race_lost()) {$reason = 'IGNORE'; last LMAIN}    # another mode won this game
+                if (race_lost()) {$reason = 'IGNORE'; last LMAIN}               # another mode won this game
                 if ($elapsed - $cas >= $SCREEN) {
                     $cas = $elapsed;
-                    $QUIET or backline(
-                        sprintf '%-11s %8d ... %12d %9d  %s  %12.2f %12.0f %12.0f',
-                        $mode, $gameid, $counter, $nopen, podil($nopen, $MaxOpen),
-                        $doba,
-                        $bc / $doba,
-                        $counter / $doba
-                    );
+                    $QUIET
+                        or backline(
+                            sprintf '%-11s %8d ... %12d %9d  %s  %12.2f %12.0f %12.0f',
+                            $mode, $gameid, $counter, $nopen, podil($nopen, $MaxOpen),
+                            $doba,
+                            $bc / $doba,
+                            $counter / $doba
+                        );
                     if (mem_over()) {$reason = 'MEMCAP'; last LMAIN}    # RAM ceiling ($MAX_GB) hit
                 }
-            }
-        }
+            } ## end if ($elapsed != $tick)
+        } ## end unless (++$counter % 100)
     } ## end continue
     $path  = undef;
     $doba  = clamp_doba(tv_interval($timer));
@@ -2589,7 +2571,7 @@ LMAIN: while ($nopen) {
             my %bb   = map(($_, 1), @bb);
             my $par  = $Parent{$Bestbet};
             my $cell = (defined $par && length $par)
-                ? (grep {!exists $bb{$_}} (unpack($pu, $par))[ 1 .. $Nbox ])[0]    # the pushed box's old cell == the player
+                ? (grep {!exists $bb{$_}} (unpack($pu, $par))[1 .. $Nbox])[0]    # the pushed box's old cell == the player
                 : $Game{'player'};
             $path .= ($cell == $M ? '' : cesta($cell, $M, \@bb)) . $T;
         }
@@ -2598,26 +2580,24 @@ LMAIN: while ($nopen) {
         $plen   = length($path);
         $steps  = $path =~ tr/UDRL//;
         $reason = 'SOLVED';
-    }
+    } ## end if ($Bestbet)
     my $qsize = 0;
-    if   ($Feat_mode) { $qsize += $_->size for values %FCellQ }
-    else              { $qsize = $Pex->size }
+    if ($Feat_mode) {$qsize += $_->size for values %FCellQ}
+    else            {$qsize = $Pex->size}
     $ending = sprintf $ENDING,
         $mode, $gameid, $Game{'nbox'}, $Game{'ncell'}, $reason, $plen // $limit, $steps, $doba,
         sprintf('%.0f', $bc / $doba), sprintf('%.0f', $counter / $doba),
         $MaxOpen,
         $qsize, scalar %Parent;
-    barva($reason,$ending);
+    barva($reason, $ending);
     bad_close(($reason eq 'SOLVED') ? 1 : 0);
     my $nseen = scalar %Parent;    # TAKEN FIRST: free_memory() empties %Parent
     free_memory();
     return ($reason, $path, $doba, $nseen);
 } ## end sub solve_forward
-
 ##############################################################################
 # ===== Order =================================
 ##############################################################################
-
 # ORDER: macro-level DFS -- ordered single-box goal-commit macros plus
 # unlocking nudges. Motivation: a wide-open box field feeding a separated
 # goal chamber. A human solves it one box at a time; the global best-first
@@ -2630,10 +2610,9 @@ LMAIN: while ($nopen) {
 # revisiting a position. A box parked on a goal by a commit is never moved
 # again. Every push is linked into %Parent, so the final move string comes
 # from the ordinary get_path() reconstruction.
-
 my (%OSeen, $OTimer, $ODeadline, $OTimeUp, $ONseen, $ONmacro, $Otick);
 my ($ORaceUp, $OMemUp, $ORaceNext, $OMemNext);    # ORDER abort flags: race (another mode won) / memory cap
-my $ORDER_NUDGE_CAP = 8;               # max consecutive nudges without a goal commit
+my $ORDER_NUDGE_CAP = 8;                          # max consecutive nudges without a goal commit
 
 # Liveness probe: is every free goal reachable in the push graph from some
 # unlocked box, with ONLY the commit-locked boxes as obstacles (both as push
@@ -2649,7 +2628,7 @@ sub order_alive($open, $boxes, $locked) {
     while (defined(my $c = shift @q)) {
         foreach my $t (@{ $Cmk{$c}; }) {
             next if exists $vis{$t} || exists $parked{$t};
-            next if exists $parked{ $Cm{$c}{$t} };    # stance blocked for good
+            next if exists $parked{ $Cm{$c}{$t} };           # stance blocked for good
             $vis{$t} = 1;
             push @q, $t;
         }
@@ -2669,11 +2648,12 @@ sub order_push_path($man, $bx, $goal, $boxes, $nseen_ref, $block = undef) {
     my (%seenst, %prevst, @queue);
     paint($man, $bx, @others);
     my $rm;
-    for my $c (0 .. $#Vis) { if ($Vis[$c] == $PaintId) { $rm = $c; last } }
+    for my $c (0 .. $#Vis) {if ($Vis[$c] == $PaintId) {$rm = $c; last}}
     confess 'EMPTY PLAYER REGION' unless defined $rm;
     my $key0 = $bx . ',' . $rm;
     $seenst{$key0} = 1;
     push @queue, [$bx, $man, $key0];
+
     while (my $st = shift @queue) {
         my ($b, $p, $key) = @$st;
 
@@ -2683,11 +2663,12 @@ sub order_push_path($man, $bx, $goal, $boxes, $nseen_ref, $block = undef) {
             if (time() - $Otick > 6) {
                 $Otick = time();
                 my $doba = tv_interval($OTimer);
-                $QUIET or backline(
-                    sprintf '%-11s %8d ... %12d %9d %6d %12.2f %12.0f',
-                    'ORDER',  $Gameid, $ONseen, scalar %OSeen,
-                    $ONmacro, $doba,   $ONseen / $doba
-                );
+                $QUIET
+                    or backline(
+                        sprintf '%-11s %8d ... %12d %9d %6d %12.2f %12.0f',
+                        'ORDER',  $Gameid, $ONseen, scalar %OSeen,
+                        $ONmacro, $doba,   $ONseen / $doba
+                    );
             }
         }
 
@@ -2714,11 +2695,12 @@ sub order_push_path($man, $bx, $goal, $boxes, $nseen_ref, $block = undef) {
             # landings, where the box does stay, are is_bad-checked (in odfs).
             paint($b, $t, @others);    # player ends on the box's old cell
             my $rm2;
-            for my $c (0 .. $#Vis) { if ($Vis[$c] == $PaintId) { $rm2 = $c; last } }
+            for my $c (0 .. $#Vis) {if ($Vis[$c] == $PaintId) {$rm2 = $c; last}}
             confess 'EMPTY PLAYER REGION' unless defined $rm2;
             my $k = $t . ',' . $rm2;
             next if $seenst{$k}++;
             $prevst{$k} = [$key, $b, $t];
+
             if ($t == $goal) {
                 my @macro;
                 for (my $kk = $k; $kk ne $key0; $kk = $prevst{$kk}[0]) {
@@ -2742,6 +2724,7 @@ sub odfs($pos, $man, $boxes, $depth, $nnudge, $locked) {
     return $pos unless @open;
     my $ot = tv_interval($OTimer);
     if ($ODeadline and $ot > $ODeadline) {$OTimeUp = 1; return undef}
+
     # The deadline above is tested on every call -- odfs is hot, but tv_interval
     # is already computed. These two are not: the race flag once a second, the
     # memory probe on the screen interval even though this search has no screen
@@ -2753,7 +2736,7 @@ sub odfs($pos, $man, $boxes, $depth, $nnudge, $locked) {
     }
     if ($ot > $OMemNext) {
         $OMemNext = $ot + $SCREEN;
-        if (mem_over()) {$OMemUp = 1; $OTimeUp = 1; return undef}    # RAM ceiling ($MAX_GB) hit
+        if (mem_over()) {$OMemUp = 1; $OTimeUp = 1; return undef}      # RAM ceiling ($MAX_GB) hit
     }
     return undef if $depth > 5000;
 
@@ -2787,7 +2770,7 @@ sub odfs($pos, $man, $boxes, $depth, $nnudge, $locked) {
     # tiers below work on the right obstacles. Lower-tier commits run only
     # after the nudges, as a last resort (the ranking can be wrong-oriented).
     my %block;
-    my $toprank = $Priority[ $goals[0] ] // 0;
+    my $toprank = $Priority[$goals[0]] // 0;
     my @lower   = grep {($Priority[$_] // 0) != $toprank} @goals;
     for my $g (grep {($Priority[$_] // 0) == $toprank} @goals) {
         my @cand = sort {$zr->{$a}{$g} <=> $zr->{$b}{$g}} grep {defined $zr->{$_}{$g}} @movable;
@@ -2821,7 +2804,7 @@ sub odfs($pos, $man, $boxes, $depth, $nnudge, $locked) {
             }
             exists $block{$bx} ? push @bcand, $cand : push @ocand, $cand;
         }
-    }
+    } ## end for my $bx (@movable)
 
     # ---- unlock probe: a blocker nudge that makes a TOP-tier goal routable
     # right now is almost certainly the move the position is waiting for.
@@ -2876,7 +2859,7 @@ sub order_commit($pos, $boxes, $macro, $depth, $nnudge, $locked, $lockcell) {
     splice(@nb, $i, 0, $to);
     my $cpos = pack($pu, $from, @nb);
     return undef if $OSeen{$cpos}++;
-    ++$ONmacro if @$macro > 1;
+    ++$ONmacro   if @$macro > 1;
     my @cur = @$boxes;
 
     for my $step (@$macro) {
@@ -2895,18 +2878,18 @@ sub order_commit($pos, $boxes, $macro, $depth, $nnudge, $locked, $lockcell) {
         # shallower node, so the map stays an acyclic tree and every edge is
         # still a real one-push transition.
         $Parent{$child} = $pos unless exists $Parent{$child};
-        $pos = $child;
-        @cur = @nx;
-    }
+        $pos            = $child;
+        @cur            = @nx;
+    } ## end for my $step (@$macro)
     $locked = { %$locked, $lockcell, 1 } if defined $lockcell;
     return odfs($pos, $from, \@nb, $depth + 1, $nnudge, $locked);
 } ## end sub order_commit
 
 sub solve_order($limit) {
     my $timer = [&gettimeofday()];
-    ($OTimer, $ODeadline, $OTimeUp) = ($timer, $limit, 0);
+    ($OTimer, $ODeadline, $OTimeUp)            = ($timer, $limit, 0);
     ($ORaceUp, $OMemUp, $ORaceNext, $OMemNext) = (0, 0, 1, $SCREEN);
-    ($ONseen, $ONmacro, $Otick)     = (0, 0, time());
+    ($ONseen, $ONmacro, $Otick)                = (0, 0, time());
     %OSeen = ($Start, 1);
     $Parent{$Start} = '';
     my ($man, @boxes) = unpack($pu, $Start);
@@ -2923,28 +2906,27 @@ sub solve_order($limit) {
     if ($reason eq 'SOLVED') {
         $path = get_path($final);
         my $tail = $Sols{$final};    # box-on-P terminal -> P->ga finishing moves ('' / legacy 1 otherwise)
-        $path  .= $tail if defined $tail && $tail =~ /[A-Za-z]/;
+        $path .= $tail if defined $tail && $tail =~ /[A-Za-z]/;
         $path = rebuilt_path($path);
         replay_check($path);
         $sollen = length($path);
         $steps  = $path =~ tr/DLRU//;
     }
+
     # macro-DFS: no queue and no box-move rate to report, so slots 1-3 stay blank
     # and the macro count takes slot 4.
     my $ending = sprintf $ENDING,
         'ORDER', $Gameid, $Game{'nbox'}, $Game{'ncell'}, $reason, $sollen || $limit,
         $steps, $doba, q{}, q{}, q{}, $ONmacro, $ONseen;
-    barva($reason,$ending);
+    barva($reason, $ending);
     %OSeen = ();
     bad_close($reason eq 'SOLVED' ? 1 : 0);
-    free_memory();                 # $ONseen is a counter, not a container -- safe here
+    free_memory();    # $ONseen is a counter, not a container -- safe here
     return ($reason, $path, $doba, $ONseen);
 } ## end sub solve_order
-
 ##############################################################################
 # ===== Backward ===========================
 ##############################################################################
-
 # BACKWARD: a first-solution search that runs ENTIRELY BACKWARD: from the
 # solved config (boxes on goals) it PULLS boxes outward, best-first guided
 # toward Start, until it reaches the Start box config in a player-compatible
@@ -2954,7 +2936,6 @@ sub solve_order($limit) {
 # game memory grows with time. %Pull/%PullMan = transpose of %Cm: a push b->c
 # (stance cm{b}{c}) reverses to a pull of a box at c back to b, player ending
 # at cm{b}{c}. Built once per game.
-
 my (%Pull, %PullMan, $StartBoxKey, %Bseen);
 my (@IsStart, @PullTo, $Far);    # the score's tables, see build_pull_to()
 
@@ -3011,12 +2992,12 @@ sub build_pull_to() {
             for my $t (@{ $Cmk{$x} // [] }) {
                 next if defined $d[$t];
                 $d[$t] = $d[$x] + 1;
-                $Far   = $d[$t] if $d[$t] > $Far;
+                $Far = $d[$t] if $d[$t] > $Far;
                 push @q, $t;
             }
         }
         $PullTo[$s] = \@d;
-    }
+    } ## end for my $s (@Baggage)
     ++$Far;
 } ## end sub build_pull_to
 
@@ -3102,12 +3083,12 @@ sub initvars_backward() {
 sub solve_backward($limit) {
     my $timer = [&gettimeofday()];
     my $cas   = time();
-    my $tick  = $cas;    # the one-second gate for the race flag; $cas is the screen's
-    %Bseen    = ();
-    my @goals  = sort {$a <=> $b} @Goal;
-    my %Q;                               # the open list: h -> [keys], FIFO inside a bucket
-    my $Hq     = 'Games::Sokoban::Solver::Heap'->new;  # the live bucket indices, cheapest on top
-    my $found;                           # the key of the node that reached Start
+    my $tick  = $cas;                                # the one-second gate for the race flag; $cas is the screen's
+    %Bseen = ();
+    my @goals = sort {$a <=> $b} @Goal;
+    my %Q;                                           # the open list: h -> [keys], FIFO inside a bucket
+    my $Hq = 'Games::Sokoban::Solver::Heap'->new;    # the live bucket indices, cheapest on top
+    my $found;                                       # the key of the node that reached Start
     my $reason = 'UNSOLVABLE';
 
     # progress counters: $bc = child candidates, $nopen/$MaxOpen = queue load,
@@ -3119,7 +3100,7 @@ sub solve_backward($limit) {
         $Bseen{$pos} = '';
         if (pack($pu, @goals) eq $StartBoxKey) {
             paint_fr($m, @goals);
-            if ($Vis_fr[ $Game{'player'} ] == $PaintId_fr) {$found = $pos; last}
+            if ($Vis_fr[$Game{'player'}] == $PaintId_fr) {$found = $pos; last}
         }
         my $h = 0;
         if (my @off = grep {!$IsStart[$_]} @goals) {
@@ -3129,13 +3110,16 @@ sub solve_backward($limit) {
             }
         }
         $hbest = $h if $h < $hbest;
-        push @{ $Q{$h} //= do {$Hq->add($h, $h); []} }, $pos;
+        push @{
+            $Q{$h} //= do {$Hq->add($h, $h); []}
+            },
+            $pos;
         ++$nopen;
     } ## end for my $m (solved_regions...)
     $MaxOpen = $nopen;
     my $counter = 0;
     while (!defined $found && $nopen) {
-        my $h0     = $Hq->peek;          # the cheapest non-empty bucket
+        my $h0     = $Hq->peek;                          # the cheapest non-empty bucket
         my $bucket = $Q{$h0};
         my $pos    = shift @$bucket;
         unless (@$bucket) {delete $Q{$h0}; $Hq->next}    # emptied: retire the bucket
@@ -3161,7 +3145,7 @@ sub solve_backward($limit) {
 
                 if (pack($pu, @nb) eq $StartBoxKey) {
                     paint_fr($ma, @nb);
-                    if ($Vis_fr[ $Game{'player'} ] == $PaintId_fr) {$found = $npos; last GEN}
+                    if ($Vis_fr[$Game{'player'}] == $PaintId_fr) {$found = $npos; last GEN}
                 }
 
                 # the score, written out here: the child's boxes are the
@@ -3175,7 +3159,10 @@ sub solve_backward($limit) {
                     }
                 }
                 $hbest = $h if $h < $hbest;
-                push @{ $Q{$h} //= do {$Hq->add($h, $h); []} }, $npos;
+                push @{
+                    $Q{$h} //= do {$Hq->add($h, $h); []}
+                    },
+                    $npos;
                 ++$nopen;
                 $MaxOpen = $nopen if $nopen > $MaxOpen;
             } ## end for my $b (@$dests)
@@ -3184,27 +3171,28 @@ sub solve_backward($limit) {
             my $doba = tv_interval($timer);
             if ($limit and $doba > $limit) {$reason = 'TIMEOUT'; last}    # the budget, promptly
             my $now = time();
-            if ($now != $tick) {    # once a second
+            if ($now != $tick) {                                          # once a second
                 $tick = $now;
-                if (race_lost()) {$reason = 'IGNORE'; last}    # another mode won this game
+                if (race_lost()) {$reason = 'IGNORE'; last}               # another mode won this game
                 if ($now - $cas >= $SCREEN) {
                     $cas = $now;
-                    $QUIET or backline(
-                        sprintf '%-11s %8d ... %12d %9d  %s  %6d %12.2f %12.0f %12.0f',
-                        'BACKWARD', $Gameid, $counter, $nopen, podil($nopen, $MaxOpen),
-                        $hbest,     $doba,
-                        $bc / $doba,
-                        $counter / $doba
-                    );
+                    $QUIET
+                        or backline(
+                            sprintf '%-11s %8d ... %12d %9d  %s  %6d %12.2f %12.0f %12.0f',
+                            'BACKWARD', $Gameid, $counter, $nopen, podil($nopen, $MaxOpen),
+                            $hbest,     $doba,
+                            $bc / $doba,
+                            $counter / $doba
+                        );
                     if (mem_over()) {$reason = 'MEMCAP'; last}    # RAM ceiling ($MAX_GB) hit
                 }
-            }
-        }
-    } ## end while (!defined $found && $nopen)
+            } ## end if ($now != $tick)
+        } ## end unless (++$counter % 200)
+    } ## end while (!defined $found &&...)
     my $doba = clamp_doba(tv_interval($timer));
     my ($path, $sollen, $steps) = ('', 0, 0);
     if (defined $found) {
-        $path   = rebuilt_path(stitch_tail($Start, build_tail($found)));
+        $path = rebuilt_path(stitch_tail($Start, build_tail($found)));
         replay_check($path);
         $reason = 'SOLVED';
         $sollen = length($path);
@@ -3213,32 +3201,28 @@ sub solve_backward($limit) {
 
     # every slot filled, as in solve_forward; the last three are read
     # backward-specifically: queue peak, queue left, configs generated
-    my $rate_div = $doba || 1;    # instant solves can have doba ~ 0
+    my $rate_div = $doba || 1;        # instant solves can have doba ~ 0
     my $ending   = sprintf $ENDING,
         'BACKWARD', $Gameid, $Game{'nbox'}, $Game{'ncell'}, $reason, $sollen || $limit, $steps, $doba,
         sprintf('%.0f', $bc / $rate_div), sprintf('%.0f', $counter / $rate_div),
         $MaxOpen,
         $nopen, scalar %Bseen;
-    barva($reason,$ending);
+    barva($reason, $ending);
     bad_close($reason eq 'SOLVED' ? 1 : 0);
-    my $nseen = scalar %Bseen;    # TAKEN FIRST: free_memory() empties %Bseen
+    my $nseen = scalar %Bseen;        # TAKEN FIRST: free_memory() empties %Bseen
     free_memory();
     return ($reason, $path, $doba, $nseen);
 } ## end sub solve_backward
-
 ##############################################################################
 # ===== Conveyor ===========================
 ##############################################################################
-
 # CONVEYOR: for games with a forced common-path "conveyor" -- ride one box
 # along it to the endpoint, then deliver boxes to goals along precomputed
 # routes. Returns NOCP when the game has no conveyor (inapplicable, not a
 # give-up). The conveyor data (common_path / c_path / to_goal) is RECOMPUTED
 # here from cm/cmk/cg/order, not read from the blob.
-
 my (%ConvCP, @ConvCR, %ConvTG);    # common_path {player}{box}=>idx / c_path [[s,t]] / to_goal {g}=>[[m,bx]]
-
-sub _conv_boxes($pos) { my (undef, @b) = unpack($pu, $pos); return @b; }
+sub _conv_boxes($pos) {my (undef, @b) = unpack($pu, $pos); return @b;}
 
 # walk-BFS over @Cg from $man, cells in $wall (hashref) impassable -> {cell=>dist}
 sub _conv_walk($man, $wall) {
@@ -3268,7 +3252,7 @@ sub _conv_route_cp($bx, $goal) {
         $parent{$p} = '';
     }
     while (@heap) {
-        @heap = sort { $seen{$a} <=> $seen{$b} } @heap;
+        @heap = sort {$seen{$a} <=> $seen{$b}} @heap;
         my $p = shift @heap;
         my ($man, $bag) = unpack('n*', $p);
         my $cd = $seen{$p};
@@ -3280,25 +3264,25 @@ sub _conv_route_cp($bx, $goal) {
             my $sl = $cd + $d->{$s};
             next if $sl > $bestlen;
             my $c = pack('n*', $bag, $t);
-            if ($t == $goal) { $bestlen = $sl; $best = $c; $seen{$c} = $sl; $parent{$c} = $p; next; }
+            if ($t == $goal) {$bestlen = $sl; $best = $c; $seen{$c} = $sl; $parent{$c} = $p; next;}
             next if exists $seen{$c} && $sl >= $seen{$c};
             $seen{$c}   = $sl;
             $parent{$c} = $p;
             push @heap, $c;
         }
-    }
+    } ## end while (@heap)
     return ({}, []) unless defined $best;
     my @u = ($best);
     my $p = $best;
-    while ($p = $parent{$p}) { unshift @u, $p; }
+    while ($p = $parent{$p}) {unshift @u, $p;}
     my (%st, @route);
-    for my $pos (@u) { my ($man, $bag) = unpack('n*', $pos); ++$st{$man}{$bag}; push @route, [$man, $bag]; }
+    for my $pos (@u) {my ($man, $bag) = unpack('n*', $pos); ++$st{$man}{$bag}; push @route, [$man, $bag];}
     return (\%st, \@route);
 } ## end sub _conv_route_cp
 
 # single-box route (man,box) -> goal $g, @$blocked boxes standing; [[src,tgt],...] or ()
 sub _conv_route_to_goal($man, $box, $g, $blocked) {
-    my %bag = map { ($_, 1) } @$blocked;
+    my %bag   = map {($_, 1)} @$blocked;
     my $start = pack('n*', $man, $box);
     my (%seen, %parent);
     $seen{$start}   = 0;
@@ -3309,7 +3293,7 @@ sub _conv_route_to_goal($man, $box, $g, $blocked) {
         my $p = shift @heap;
         my ($m, $bx) = unpack('n*', $p);
         my $sol = $seen{$p};
-        my $r = _conv_walk($m, { %bag, $bx => 1 });
+        my $r   = _conv_walk($m, { %bag, $bx => 1 });
         for my $t (@{ $Cmk{$bx} // [] }) {
             next if $bag{$t};
             my $s = $Cm{$bx}{$t};
@@ -3320,14 +3304,14 @@ sub _conv_route_to_goal($man, $box, $g, $blocked) {
             next if exists $seen{$c} && $seen{$c} <= $sl;
             $seen{$c}   = $sl;
             $parent{$c} = $p;
-            if ($t == $g) { $bestlen = $sl; $best = $c; next; }
+            if ($t == $g) {$bestlen = $sl; $best = $c; next;}
             push @heap, $c;
         }
-    }
+    } ## end while (@heap)
     return () unless defined $best;
     my @u = ([unpack('n*', $best)]);
     my $p = $best;
-    while ($p = $parent{$p}) { unshift @u, [unpack('n*', $p)]; }
+    while ($p = $parent{$p}) {unshift @u, [unpack('n*', $p)];}
     shift @u;
     return @u;
 } ## end sub _conv_route_to_goal
@@ -3353,12 +3337,12 @@ sub build_conveyor() {
             my ($pc, $route) = _conv_route_cp($bx, $g);
             next unless @$route;
             ++$nvalid;
-            for my $s (keys %$pc) { for my $t (keys %{ $pc->{$s} }) { $common{$s}{$t} += $pc->{$s}{$t}; } }
+            for my $s (keys %$pc) {for my $t (keys %{ $pc->{$s} }) {$common{$s}{$t} += $pc->{$s}{$t};}}
             $routes{$bx}{$g} = $route;
         }
     }
     my $req = $nvalid;
-    my %gh = map { ($_, 1) } @Goal;
+    my %gh  = map {($_, 1)} @Goal;
     my %cp_count;    # moves appearing in ALL the routes (count == req)
     for my $bx (keys %common) {
         my $th = $common{$bx};
@@ -3367,14 +3351,14 @@ sub build_conveyor() {
             # An edge LANDING on a goal is never part of the conveyor -- the
             # endpoint must sit OFF the goals. SKIP that edge (a `last` here
             # would abandon the scan at whatever key order put first).
-            next if $gh{$t};
+            next                   if $gh{$t};
             $cp_count{$bx}{$t} = 1 if $v == $req;
         }
     }
     for my $bx (keys %routes) {
         my $th = $routes{$bx};
         while (my ($g, $v) = each %$th) {
-            for my $x (@$v) { my ($s, $t) = @$x; push @$x, (exists $cp_count{$s}{$t} ? 1 : 0); }
+            for my $x (@$v) {my ($s, $t) = @$x; push @$x, (exists $cp_count{$s}{$t} ? 1 : 0);}
         }
     }
     %common = ();
@@ -3387,23 +3371,23 @@ sub build_conveyor() {
                 $idx //= 0;
                 if ($s->[2] == 1) {
                     $common{ $s->[0] }{ $s->[1] } //= $idx;
-                    if ($common{ $s->[0] }{ $s->[1] } != $idx) { %ConvCP = (); return; }    # non-sequential
+                    if ($common{ $s->[0] }{ $s->[1] } != $idx) {%ConvCP = (); return;}    # non-sequential
                     ++$idx;
                 }
             }
         }
-    }
-    unless (%common) { %ConvCP = (); return; }
-    for my $bx (keys %common) { while (my ($t, $i) = each %{ $common{$bx} }) { $ConvCR[$i] = [$bx, $t]; } }
-    unless (@ConvCR && defined $ConvCR[-1]) { %ConvCP = (); @ConvCR = (); return; }
+    } ## end for my $bx (keys %routes)
+    unless (%common) {%ConvCP = (); return;}
+    for my $bx (keys %common) {while (my ($t, $i) = each %{ $common{$bx} }) {$ConvCR[$i] = [$bx, $t];}}
+    unless (@ConvCR && defined $ConvCR[-1]) {%ConvCP = (); @ConvCR = (); return;}
     %ConvCP = %common;    # the index-based structure -> conv_to_end's start_idx = ConvCP{source}{target}
-
     my ($man, $box) = @{ $ConvCR[-1] };
-    my @ng = sort { ($Priority[$b] // 0) <=> ($Priority[$a] // 0) } @Goal;
-    my $g = shift @ng;
+    my @ng = sort {($Priority[$b] // 0) <=> ($Priority[$a] // 0)} @Goal;
+    my $g  = shift @ng;
     my (@blk, %tg);
     my $found = 0;
-    my @p = _conv_route_to_goal($man, $box, $g, \@blk);
+    my @p     = _conv_route_to_goal($man, $box, $g, \@blk);
+
     if (@p) {
         $found = 1;
         $tg{$g} = \@p;
@@ -3424,7 +3408,7 @@ sub build_conveyor() {
 # Simple push generator: [source,target] pairs for reachable, non-deadlock pushes.
 sub conv_moves($pos) {
     my ($man, @boxes) = unpack($pu, $pos);
-    my %bag = map { ($_, 1) } @boxes;
+    my %bag = map {($_, 1)} @boxes;
     paint($man, @boxes);
     my @moves;
     for my $bx (@boxes) {
@@ -3432,7 +3416,7 @@ sub conv_moves($pos) {
             next if $bag{$t};
             my $s = $Cm{$bx}{$t};
             next unless $Vis[$s] == $PaintId;
-            my %tbag = map { ($_, 1) } ($t, grep { $_ != $bx } @boxes);
+            my %tbag = map {($_, 1)} ($t, grep {$_ != $bx} @boxes);
             next if is_bad($bx, $t, \%tbag);
             push @moves, [$bx, $t];
         }
@@ -3446,22 +3430,25 @@ sub conv_to_goal($pos, $box, $tg) {
     my ($man, @boxes) = unpack($pu, $pos);
     for my $mv (@$tg) {
         paint($man, @boxes);
-        my %bag = map { ($_, 1) } @boxes;
+        my %bag = map {($_, 1)} @boxes;
         my ($m, $bx) = @$mv;
         my $player = $Cm{$m}{$bx};
         return 0 unless defined $player && $Vis[$player] == $PaintId;
         return 0 if $bag{$bx};
-        my @nb    = sort { $a <=> $b } map { $_ == $box ? $bx : $_ } @boxes;
+        my @nb    = sort {$a <=> $b} map {$_ == $box ? $bx : $_} @boxes;
         my $child = pack($pu, $box, @nb);
-        my %nbag  = map { ($_, 1) } @nb;
-        if (is_bad($box, $bx, \%nbag)) { set_bad($child); return 0; }
+        my %nbag  = map {($_, 1)} @nb;
+        if (is_bad($box, $bx, \%nbag)) {set_bad($child); return 0;}
         return 0 if isbad($child);
         return 0 if exists $Parent{$child};
         $Parent{$child} = $pos;
-        if (exists $Sols{$child}) { $Bestbet = $child; return 1; }
+        if (exists $Sols{$child}) {$Bestbet = $child; return 1;}
         $Pex->add($child, value_score($box, $bx, \%nbag));
-        $man = $m; $box = $bx; @boxes = @nb; $pos = $child;
-    }
+        $man   = $m;
+        $box   = $bx;
+        @boxes = @nb;
+        $pos   = $child;
+    } ## end for my $mv (@$tg)
     return 1;
 } ## end sub conv_to_goal
 
@@ -3471,11 +3458,12 @@ sub conv_to_end($pos, $source, $target) {
     my $start_idx = $ConvCP{$source}{$target};
     return unless defined $start_idx;
     my ($man, @boxes) = unpack($pu, $pos);
-    my %bag = map { ($_, 1) } @boxes;
+    my %bag = map {($_, 1)} @boxes;
     return unless $bag{$source};
     my $parent = $pos;
     my ($last_added, $last_box);
-    my %to_add = map { ($_, 1) } ($start_idx .. $#ConvCR);
+    my %to_add = map {($_, 1)} ($start_idx .. $#ConvCR);
+
     for my $i ($start_idx .. $#ConvCR) {
         my ($cs, $ct) = @{ $ConvCR[$i] };
         next unless $bag{$cs};
@@ -3484,10 +3472,10 @@ sub conv_to_end($pos, $source, $target) {
         next unless defined $player;
         paint($man, @boxes);
         next unless $Vis[$player] == $PaintId;
-        my @nb    = sort { $a <=> $b } map { $_ == $cs ? $ct : $_ } @boxes;
+        my @nb    = sort {$a <=> $b} map {$_ == $cs ? $ct : $_} @boxes;
         my $child = pack($pu, $cs, @nb);
-        my %nbag  = map { ($_, 1) } @nb;
-        if (is_bad($cs, $ct, \%nbag)) { set_bad($child); last; }
+        my %nbag  = map {($_, 1)} @nb;
+        if (is_bad($cs, $ct, \%nbag)) {set_bad($child); last;}
         last if isbad($child);
         last if exists $Parent{$child};
         $Parent{$child} = $parent;
@@ -3499,15 +3487,16 @@ sub conv_to_end($pos, $source, $target) {
         $man    = $cs;
         @boxes  = @nb;
         %bag    = %nbag;
-    }
+    } ## end for my $i ($start_idx .....)
     return if %to_add;
     return unless defined $last_added;
     ($man, @boxes) = unpack($pu, $last_added);
-    %bag = map { ($_, 1) } @boxes;
-    my @free = grep { !$bag{$_} } @Goal;
+    %bag = map {($_, 1)} @boxes;
+    my @free = grep {!$bag{$_}} @Goal;
     return unless @free;
-    my $index = &max(map { $Priority[$_] // 0 } @free);
-    @free = grep { ($Priority[$_] // 0) == $index } @free;
+    my $index = &max(map {$Priority[$_] // 0} @free);
+    @free = grep {($Priority[$_] // 0) == $index} @free;
+
     for my $g (@free) {
         next unless exists $ConvTG{$g};
         last if conv_to_goal($last_added, $last_box, $ConvTG{$g});
@@ -3527,6 +3516,7 @@ sub solve_conveyor($limit) {
     # rules must keep meaning that.
     unless (@ConvCR) {
         my $doba = clamp_doba(tv_interval($timer));
+
         # the HEAD of $ENDING and nothing after it: this game has no forced
         # conveyor, so there was no search to report. Keep the widths equal to
         # $ENDING's first five fields or the line stops lining up with the rest.
@@ -3546,26 +3536,27 @@ sub solve_conveyor($limit) {
         my $pozice = $Pex->next;
         next if isbad($pozice);
         unless (++$counter % 200) {
+
             # The budget on this gate; the other two on their own periods -- see
             # the note at the top of the file. This search had no race check at
             # all until 2026-09-10, so CONVEYOR could not report IGNORE and went
             # on spending its whole budget after another mode had solved the
             # game: an inconsistency between modes rather than a policy.
             my $ot = tv_interval($timer);
-            if ($limit and $ot > $limit) { $reason = 'TIMEOUT'; last; }
+            if ($limit and $ot > $limit) {$reason = 'TIMEOUT'; last;}
             if ($ot > $CRaceNext) {
                 $CRaceNext = $ot + 1;
-                if (race_lost()) { $reason = 'IGNORE'; last; }
+                if (race_lost()) {$reason = 'IGNORE'; last;}
             }
             if ($ot > $CMemNext) {
                 $CMemNext = $ot + $SCREEN;
-                if (mem_over()) { $reason = 'MEMCAP'; last; }
+                if (mem_over()) {$reason = 'MEMCAP'; last;}
             }
-        }
+        } ## end unless (++$counter % 200)
         my @boxes = _conv_boxes($pozice);
         for my $mv (conv_moves($pozice)) {
             my ($src, $tgt) = @$mv;
-            my @nb    = sort { $a <=> $b } map { $_ == $src ? $tgt : $_ } @boxes;
+            my @nb    = sort {$a <=> $b} map {$_ == $src ? $tgt : $_} @boxes;
             my $child = pack($pu, $src, @nb);
             next if isbad($child);
             if (exists $Sols{$child}) {
@@ -3581,33 +3572,33 @@ sub solve_conveyor($limit) {
             }
             next if isbad($child) || exists $Parent{$child};
             $Parent{$child} = $pozice;
-            my %tbag = map { ($_, 1) } @nb;
+            my %tbag = map {($_, 1)} @nb;
             $Pex->add($child, value_score($src, $tgt, \%tbag));
-        }
+        } ## end for my $mv (conv_moves(...))
         last if $Bestbet;
-    }
+    } ## end while ($Pex->size)
     my ($path, $sollen, $steps) = ('', 0, 0);
     if ($Bestbet) {
         $reason = 'SOLVED';
         $path   = get_path($Bestbet);
         my $tail = $Sols{$Bestbet};    # box-on-P terminal -> P->ga finishing moves ('' / legacy 1 otherwise)
-        $path   .= $tail if defined $tail && $tail =~ /[A-Za-z]/;
-        $path   = rebuilt_path($path);
+        $path .= $tail if defined $tail && $tail =~ /[A-Za-z]/;
+        $path = rebuilt_path($path);
         replay_check($path);
         $sollen = length $path;
         $steps  = $path =~ tr/DLRU//;
     }
-    my $doba   = clamp_doba(tv_interval($timer));
+    my $doba = clamp_doba(tv_interval($timer));
+
     # the forced-conveyor walk keeps no queue and no rates: only the seen count
     my $ending = sprintf $ENDING,
         'CONVEYOR', $Gameid, $Game{'nbox'}, $Game{'ncell'}, $reason, $sollen || $limit, $steps, $doba,
         q{}, q{}, q{}, q{}, $nseen;
-    barva($reason,$ending);
+    barva($reason, $ending);
     bad_close($reason eq 'SOLVED' ? 1 : 0);
-    free_memory();                 # $nseen is already a plain number here -- safe
+    free_memory();    # $nseen is already a plain number here -- safe
     return ($reason, $path, $doba, $nseen);
 } ## end sub solve_conveyor
-
 ################################################################################
 # ===== Plan (the packing plan, backward-simulated; FEATURE's first axis) =====
 ################################################################################
@@ -3639,7 +3630,6 @@ sub solve_conveyor($limit) {
 # (declared with the FEATURE state at the top of the file -- build_planneed
 # in the Engine section reads @PlanPair, and a lexical must be declared above
 # every sub that uses it)
-
 # The plan odometer (Festival score_parked_boxes analog), WAVE-SOFTENED: a
 # strict total order would be an artifact of the simulation's execution
 # order. The prefix runs over WAVES: a fully occupied wave counts whole and
@@ -3648,7 +3638,7 @@ sub solve_conveyor($limit) {
 # walk. Mandatory inits first: any missing -> the count of occupied inits is
 # the whole value. Scale: 0 .. @PlanInit + total pair count.
 sub plan_odometer($boxes) {
-    my %has = map {($_, 1)} @$boxes;
+    my %has  = map  {($_, 1)} @$boxes;
     my $init = grep {$has{$_}} @PlanInit;
     return $init if $init < @PlanInit;
     my $v = scalar @PlanInit;
@@ -3675,7 +3665,7 @@ sub _plan_push_bfs($c, $blk) {
         for my $t (@{ $Cmk{$s} // [] }) {
             next if $blk->{$t};
             my $stance = $Cm{$s}{$t};
-            next if !defined $stance || $blk->{$stance};
+            next     if !defined $stance || $blk->{$stance};
             return 1 if $t == $c;
             my $key = pack('nn', $t, $s);
             next if $seen{$key}++;
@@ -3689,7 +3679,7 @@ sub _plan_push_bfs($c, $blk) {
         for my $t (@{ $Cmk{$p} // [] }) {
             next if $blk->{$t};
             my $stance = $Cm{$p}{$t};
-            next if !defined $stance || $blk->{$stance} || $Vis[$stance] != $PaintId;
+            next     if !defined $stance || $blk->{$stance} || $Vis[$stance] != $PaintId;
             return 1 if $t == $c;
             my $key = pack('nn', $t, $p);
             next if $seen{$key}++;
@@ -3741,7 +3731,7 @@ sub _plan_bfs($c, $blk, $cur, $base) {
             push @q, [$b, $ma, $d + 1, $nkey];
             $hit{$b} = [$d + 1, $nkey] if $base->{$b} && !exists $hit{$b};
         }
-    }
+    } ## end while ($h < @q)
     return (\%hit, \%par, \%man);
 } ## end sub _plan_bfs
 
@@ -3758,13 +3748,12 @@ sub _plan_path($key, $par) {
 }
 
 sub build_plan() {
-    @PlanPair     = ();
-    @PlanInit     = ();
-    @PlanWaves    = ();
-    $Plan_waves   = 0;
-    return unless @Goal == $Nbox;    # unique solved layout only
-    build_pull();                    # %Pull/%PullMan fresh for THIS game
-
+    @PlanPair   = ();
+    @PlanInit   = ();
+    @PlanWaves  = ();
+    $Plan_waves = 0;
+    return unless @Goal == $Nbox;         # unique solved layout only
+    build_pull();                         # %Pull/%PullMan fresh for THIS game
     my %box  = map(($_, 1), @Goal);       # simulated board: boxes on goals
     my %base = map(($_, 1), @Baggage);    # unconsumed bases
     my $cur;                              # player cell after the last journey
@@ -3777,10 +3766,8 @@ sub build_plan() {
         delete $box{$g};
         delete $base{$g};
     }
-
     my $NOEDGE = 100_000_000;    # no edge
     my $DUMMY  = 1_000_000;      # padding: beats no-edge, loses to any real path
-
     while (%box) {
         ++$Plan_waves;
 
@@ -3805,16 +3792,18 @@ sub build_plan() {
         my @mx;
         for my $i (0 .. $n - 1) {
             my $c = $cand[$i];
-            push @mx, [map {
-                my $b = $bases[$_];
-                (defined $c && defined $b) ? ($hits{$c}{$b} ? $hits{$c}{$b}[0] : $NOEDGE) : $DUMMY
-            } 0 .. $n - 1];
+            push @mx, [
+                map {
+                    my $b = $bases[$_];
+                    (defined $c && defined $b) ? ($hits{$c}{$b} ? $hits{$c}{$b}[0] : $NOEDGE) : $DUMMY
+                    } 0 .. $n - 1
+            ];
         }
         my @out;
         Games::Sokoban::Solver::Munkres::assign(\@mx, \@out);
         my @todo;    # [goal, base, cost, endkey]
         for my $i (0 .. $#cand) {
-            my $b = $bases[ $out[$i] ] // next;
+            my $b = $bases[$out[$i]] // next;
             my $e = $hits{ $cand[$i] }{$b} or next;    # DUMMY/NOEDGE cell = unmatched
             push @todo, [$cand[$i], $b, @$e];
         }
@@ -3841,9 +3830,10 @@ sub build_plan() {
             delete $box{$c};
             delete $base{$b};
             ++$done;
-        }
+        } ## end while (@todo)
         last unless $done;    # a wave that executes nothing ends the plan
     } ## end while (%box)
+
     # the odometer's views: wave-0 pairs split off as the mandatory inits;
     # @PlanWaves groups the cells by wave (highest wave = filled first)
     @PlanInit = map {$_->[0]} grep {$_->[2] == 0} @PlanPair;
@@ -3852,11 +3842,9 @@ sub build_plan() {
     @PlanWaves = map {$bywave{$_}} sort {$b <=> $a} keys %bywave;
     return;
 } ## end sub build_plan
-
 ################################################################################
 # ===== dispatcher =============================================================
 ################################################################################
-
 # Thin dispatcher: the mode-agnostic setup, then the part a mode needs.
 # BACKWARD is a pure pull-search (no scorer, no is_bad, no matching); every
 # other mode -- the FORWARD scorers (incl FLOW and FEATURE), ORDER and
@@ -3871,9 +3859,9 @@ sub initvars($gameid, $gm, $mode = 'PUSH_SCORE') {
         build_plan();
         build_planneed();
     }
-    else { @PlanNeed = () }
-    if   ($mode eq 'BACKWARD') { initvars_backward() }
-    else                       { initvars_score($mode) }
+    else                     {@PlanNeed = ()}
+    if ($mode eq 'BACKWARD') {initvars_backward()}
+    else                     {initvars_score($mode)}
 }
 
 sub solve($gameid, $gm, $limit, $mode = 'PUSH_SCORE') {
@@ -3883,7 +3871,6 @@ sub solve($gameid, $gm, $limit, $mode = 'PUSH_SCORE') {
     return solve_conveyor($limit) if $mode eq 'CONVEYOR';
     return solve_forward($limit, $mode);
 }
-
 ##############################################################################
 # ===== free_memory ==========================================================
 #
@@ -3929,24 +3916,154 @@ sub solve($gameid, $gm, $limit, $mode = 'PUSH_SCORE') {
 # code that names it, and the backward / order / conveyor containers are
 # declared beside their own searches, far below clearvars().
 sub free_memory() {
-    undef @Baggage;    undef @Blk;        undef %Bseen;
-    undef @Buf;        undef @Buf_c;      undef @Buf_fr;     undef %CanonMap;
-    undef @Cg;         undef %Cm;         undef %Cmk;        undef %ConvCP;
-    undef @ConvCR;     undef %ConvTG;     undef %CPath;      undef @CPathArr;
-    undef %CPathIdx;   undef %ExplMark;   undef @FCellKey;   undef @IsStart;
+    undef @Baggage;
+    undef @Blk;
+    undef %Bseen;
+    undef @Buf;
+    undef @Buf_c;
+    undef @Buf_fr;
+    undef %CanonMap;
+    undef @Cg;
+    undef %Cm;
+    undef %Cmk;
+    undef %ConvCP;
+    undef @ConvCR;
+    undef %ConvTG;
+    undef %CPath;
+    undef @CPathArr;
+    undef %CPathIdx;
+    undef %ExplMark;
+    undef @FCellKey;
+    undef @IsStart;
     undef @PullTo;
-    undef %FCellQ;     undef %Game;       undef @Goal;       undef @IsWall;
-    undef @Maze;       undef %MemBad;     undef %OSeen;      undef %Parent;
-    undef %Pis;        undef @Priority;   undef %Pull;       undef %PullMan;
-    undef %RegCells;   undef %Sols;       undef %SolsC;      undef %StanceIdx;
-    undef %Tahy;       undef @Target;     undef %ToGoal;     undef @Vis;
-    undef @Vis_c;      undef @Vis_fr;
+    undef %FCellQ;
+    undef %Game;
+    undef @Goal;
+    undef @IsWall;
+    undef @Maze;
+    undef %MemBad;
+    undef %OSeen;
+    undef %Parent;
+    undef %Pis;
+    undef @Priority;
+    undef %Pull;
+    undef %PullMan;
+    undef %RegCells;
+    undef %Sols;
+    undef %SolsC;
+    undef %StanceIdx;
+    undef %Tahy;
+    undef @Target;
+    undef %ToGoal;
+    undef @Vis;
+    undef @Vis_c;
+    undef @Vis_fr;
 
     # scalars holding a reference into the blob or a built structure: the
     # container above is only really freed once the last reference to it goes
-    $Bestbet = $Blok = $BlokVec = $Corridor = $Distance = $Hole = undef;
-    $Pex     = $Route = $Wall = undef;
+    $Bestbet = $Blok  = $BlokVec = $Corridor = $Distance = $Hole = undef;
+    $Pex     = $Route = $Wall    = undef;
     return;
 } ## end sub free_memory
-
 1;
+__END__
+
+=head1 NAME
+
+Games::Sokoban::Solver::Firstbet - the first-solution engine: ten search modes over one level analysis
+
+=head1 SYNOPSIS
+
+    use Games::Sokoban::Solver::Firstbet ();
+
+    $Games::Sokoban::Solver::Firstbet::QUIET = 2;
+    my ($reason, $path, $seconds, $positions)
+        = Games::Sokoban::Solver::Firstbet::solve($label, $game_blob, 60, 'FEATURE');
+
+=head1 DESCRIPTION
+
+A heuristic search for a first solution of a level, in ten modes that share
+one move generator, one deadlock battery and one set of macros and differ in
+how they order the search. The level comes in as the analysis of
+L<Games::Sokoban::Solver::Parser> in its C<blob> form; the result goes back to
+the caller, who owns it. Nothing is stored and nothing is printed above
+C<$QUIET>.
+
+This is Games::Sokoban::Firstbet 3.8 of the Sokoban project, where the
+engine was built and measured over a database of 32 000 levels; only the
+modules it leans on were rewired here, the search is untouched. The comments
+at the top of the source say what each piece of machinery is and when it was
+promoted.
+
+=head2 The modes
+
+    PUSH_SCORE   quadratized push distance of every box to the goals (the default)
+    MOVE_SCORE   the same on move distances
+    PUSH_ASSIGN  the Hungarian assignment of boxes to goals on raw push distances
+    MOVE_SUM     the sum of raw move distances
+    ROUTE        bands along the routes boxes take to the goals
+    FLOW         route-dominant, with a coarse gradient
+    ORDER        a depth-first walk over the ladder in which the goals must be filled, with macros
+    BACKWARD     a pull search from the solved level back towards the start
+    CONVEYOR     macro delivery along a forced common path (only on levels that have one)
+    FEATURE      the feature-space search: positions filed by four counts, advised pushes free
+
+L<Games::Sokoban::Solver::Portfolio> names them in their order of strength.
+
+=head1 INTERFACE
+
+=head2 solve
+
+    my ($reason, $path, $seconds, $positions) = solve($label, $game_blob, $limit, $mode);
+
+C<$label> is any integer the caller names the level by (it is printed in the
+progress lines); C<$limit> seconds, 0 = no time limit; C<$mode> one of the
+ten, C<PUSH_SCORE> by default. C<$path> is the solution for the reduced level
+in the letters C<u r d l> (a step) and C<U R D L> (a push), written again from
+its pushes before it is returned; C<$positions> the positions the search saw.
+
+C<$reason>: C<SOLVED>; C<TIMEOUT>; C<UNSOLVABLE> (the whole state space was
+searched -- on a level the Parser accepted this is a defect worth reporting);
+C<GIVEUP> (ORDER or CONVEYOR exhausted its restricted tree, which is not the
+whole state space); C<NOCP> (CONVEYOR on a level without a forced common path:
+the mode did not search at all); C<IGNORE> (another mode of a race won the
+level); C<MEMCAP> (the memory ceiling).
+
+=head2 Run control
+
+    our $QUIET      0 = every progress line, 1 = no transient lines, 2 = nothing
+    our $MAX_GB     stop as MEMCAP when the whole machine uses more than this many GiB; 0 = off
+    our $RACE_FLAG  a hash reference, label => true, polled once a second: the level is won elsewhere
+    our $RACE_GID   the label this solve is running
+
+These are set by the caller before C<solve>; L<Games::Sokoban::Solver::Race>
+sets the last two for every worker.
+
+=head1 CAVEATS
+
+BACKWARD keeps a cache of pull tables between the levels one process solves,
+so its path for a level may differ from the path it returns for the same level
+alone; every path returned is a solution all the same. The deadlock patterns
+of the level come from the analysis, and a table computed under a budget is
+smaller than the complete one -- the search then takes another way or fails
+where a complete table would not.
+
+=head1 SEE ALSO
+
+L<Games::Sokoban::Solver>, L<Games::Sokoban::Solver::Parser>,
+L<Games::Sokoban::Solver::Portfolio>, L<Games::Sokoban::Solver::Firstbet::Berk>
+(the same engine with its caches on disk).
+
+=head1 AUTHOR
+
+Jiri Broz, E<lt>jiri.krobot.broz@gmail.comE<gt>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2026 by Jiri Broz
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.42.2 or,
+at your option, any later version of Perl 5 you may have available.
+
+=cut

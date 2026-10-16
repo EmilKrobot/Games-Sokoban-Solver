@@ -12,17 +12,22 @@ package Games::Sokoban::Solver::Replay;
 #
 # Directions are read case-insensitively: a push is detected by a box standing
 # on the target cell, not by the letter being a capital.
-
 use v5.42;
-
 our $VERSION = '0.01';
-
 my %DELTA = ('u' => [-1, 0], 'd' => [1, 0], 'l' => [0, -1], 'r' => [0, 1]);
 
 # digit cell code -> state name
 my %OBR = (
-    0 => 'sp',     1 => 'empty',  2 => 'avoid', 3 => 'goal',           4 => 'box',
-    5 => 'player', 6 => 'player_onavoid', 7 => 'box_in', 8 => 'player_in', 9 => 'wall',
+    0 => 'sp',
+    1 => 'empty',
+    2 => 'avoid',
+    3 => 'goal',
+    4 => 'box',
+    5 => 'player',
+    6 => 'player_onavoid',
+    7 => 'box_in',
+    8 => 'player_in',
+    9 => 'wall',
 );
 
 # What a step does to the cell the player leaves and the cell he enters: a pair
@@ -33,22 +38,22 @@ my %TRANSITIONS = (
         sp     => ['sp', 'player'],
         goal   => ['sp', 'player_in'],
         avoid  => ['sp', 'player_onavoid'],
-        box    => {sp => ['sp', 'player', 'box'],    goal => ['sp', 'player', 'box_in']},
-        box_in => {sp => ['sp', 'player_in', 'box'], goal => ['sp', 'player_in', 'box_in']},
+        box    => { sp => ['sp', 'player', 'box'], goal => ['sp', 'player', 'box_in'] },
+        box_in => { sp => ['sp', 'player_in', 'box'], goal => ['sp', 'player_in', 'box_in'] },
     },
     player_in => {
         sp     => ['goal', 'player'],
         goal   => ['goal', 'player_in'],
         avoid  => ['goal', 'player_onavoid'],
-        box    => {sp => ['goal', 'player', 'box'],    goal => ['goal', 'player', 'box_in']},
-        box_in => {sp => ['goal', 'player_in', 'box'], goal => ['goal', 'player_in', 'box_in']},
+        box    => { sp => ['goal', 'player', 'box'], goal => ['goal', 'player', 'box_in'] },
+        box_in => { sp => ['goal', 'player_in', 'box'], goal => ['goal', 'player_in', 'box_in'] },
     },
     player_onavoid => {
         sp     => ['avoid', 'player'],
         goal   => ['avoid', 'player_in'],
         avoid  => ['avoid', 'player_onavoid'],
-        box    => {sp => ['avoid', 'player', 'box'],    goal => ['avoid', 'player', 'box_in']},
-        box_in => {sp => ['avoid', 'player_in', 'box'], goal => ['avoid', 'player_in', 'box_in']},
+        box    => { sp => ['avoid', 'player', 'box'], goal => ['avoid', 'player', 'box_in'] },
+        box_in => { sp => ['avoid', 'player_in', 'box'], goal => ['avoid', 'player_in', 'box_in'] },
     },
 );
 
@@ -72,7 +77,6 @@ sub check ($code, $path) {
     }
     return 'no player found' unless defined $pr;
     return 'no goals found'  unless @goals;
-
     for my $i (0 .. length($path) - 1) {
         my $ch  = substr($path, $i, 1);
         my $dir = lc $ch;
@@ -85,6 +89,7 @@ sub check ($code, $path) {
         return "blocked by wall/empty at step $i" if $tgt eq 'wall' || $tgt eq 'empty';
         my $rule = $TRANSITIONS{$cur}{$tgt};
         return "no transition rule at step $i ($cur -> $tgt)" unless $rule;
+
         if (ref $rule eq 'ARRAY') {
             $level[$pr][$pc] = $rule->[0];
             $level[$tr][$tc] = $rule->[1];
@@ -100,16 +105,13 @@ sub check ($code, $path) {
             $level[$nr][$nc] = $pushrule->[2];
         }
         ($pr, $pc) = ($tr, $tc);
-    }
-
+    } ## end for my $i (0 .. length(...))
     for my $g (@goals) {
-        return "not solved (goal at $g->[0],$g->[1] not covered)" if $level[ $g->[0] ][ $g->[1] ] ne 'box_in';
+        return "not solved (goal at $g->[0],$g->[1] not covered)" if $level[$g->[0]][$g->[1]] ne 'box_in';
     }
     return undef;
 } ## end sub check
-
 1;
-
 __END__
 
 =head1 NAME

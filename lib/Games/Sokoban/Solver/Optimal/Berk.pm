@@ -63,22 +63,21 @@ package Games::Sokoban::Solver::Optimal::Berk;
 #     the enqueue and CLEARED at the pop -- which is why Games::Berkeley needed g_exp_del,
 #     the one operation that store had never had.
 our $VERSION = '0.01';
-
 use v5.42;
 use feature 'keyword_all', 'keyword_any', 'declared_refs', 'refaliasing';
 use experimental ('keyword_any', 'keyword_all', 'refaliasing', 'declared_refs');
 use warnings FATAL => ('uninitialized');
 no warnings('once', 'recursion');
-use Carp           ('confess');
-use Time::HiRes    ('tv_interval', 'gettimeofday');
-use Storable       ('thaw', 'dclone');
-use List::Util     ('max');
+use Carp        ('confess');
+use Time::HiRes ('tv_interval', 'gettimeofday');
+use Storable    ('thaw', 'dclone');
+use List::Util  ('max');
 use Compress::Zlib;
 use Term::ANSIColor;
 use Games::Sokoban::Solver::Berkeley ();
-use Games::Sokoban::Solver::Console  ('backline', 'backlinen', 'podil');
-use Games::Sokoban::Solver::Data     ();
-use Games::Sokoban::Solver::Memory   ();
+use Games::Sokoban::Solver::Console ('backline', 'backlinen', 'podil');
+use Games::Sokoban::Solver::Data   ();
+use Games::Sokoban::Solver::Memory ();
 
 # $LIMIT seconds (0 = none), $CACHE the pool in bytes, $MAX_GB the whole machine's RAM
 # ceiling in GiB (0 or undef = off): the search stops as MEMCAP, returned as TIMEOUT and
@@ -99,12 +98,11 @@ our @Track;
 # line, 2 no durable line either (the red OUT OF MEMORY line is never muted).
 our ($RACE_FLAG, $RACE_GID);
 our $QUIET = 0;
-sub race_lost() { $RACE_FLAG && $RACE_GID && $RACE_FLAG->{$RACE_GID} }
-
+sub race_lost() {$RACE_FLAG && $RACE_GID && $RACE_FLAG->{$RACE_GID}}
 my (
     %Game,   @Goal,    @Target,   %Cm,   %Cmk,      @Cg,       %Pis,
     %InvPis, @Baggage, %Priority, @Maze, $Has_hole, $Has_wall, $Has_corridor,
-    $Hole,   $Wall,    $Corridor, $Blok, $BlokVec, $W
+    $Hole,   $Wall,    $Corridor, $Blok, $BlokVec,  $W
    );
 my ($Nbox, %Sols, %SolReal, %Bags, $corridors, $holes, $pu);
 
@@ -144,17 +142,17 @@ my ($Fifo, $H_on) = (0, 0);
 
 # FIFO's own contract, identical to the baseline's. $nStart is the only writer of
 # solve_stats.nstart; the bucket modes leave it 0.
-our $nStart           = 0;
-our $RESTART_MIN_OPEN = 100_000;
-our $RESTART_RATIO    = 0.5;
+my $nStart           = 0;
+my $RESTART_MIN_OPEN = 100_000;
+my $RESTART_RATIO    = 0.5;
 
 # THE BAND, identical to the baseline's (Solver.pm, "THE BAND", explains it): FIFO queues
 # an unseen child only within $Band_cur boxes of the record's box track (the box
 # configurations its solution passes through); a heap that ran dry with drops is no proof,
 # so the band is dropped and the same record is searched around unrestricted, and an
 # improvement brings it back at $BAND. $BAND = 0 = no band (the pre-3.1 FIFO).
-our $BAND          = 2;
-our $BAND_MEMO_MAX = 4_000_000;
+our $BAND = 2;
+my $BAND_MEMO_MAX = 4_000_000;
 my ($Band_cur, $Band_dropped, $Band_total, $Cw, $Band_zero, %BandMemo, @BandCfg);
 
 # What the LAST PRINTED info() line said, so the next one can decide whether that line is
@@ -176,7 +174,7 @@ my ($Level_at);
 # bucket_add, so it is exact by construction; the hash holds one small integer per cost
 # level ever used, a few hundred at most. Display only -- nothing reads it but info().
 my (%BucketCnt);
-my ($bc,         $counter, $timer,  $Probed, $Cas, $Gameid);
+my ($bc, $counter, $timer, $Probed, $Cas, $Gameid);
 
 # The frontier's effective branching factor, reported by info() as $Pushed/$Expanded --
 # how many children of an average parent actually END UP ON THE HEAP (USER 2026-08-31;
@@ -186,10 +184,10 @@ my ($bc,         $counter, $timer,  $Probed, $Cas, $Gameid);
 # deliberately not in $Pushed -- those are not children of anything. Read it against 1:
 # above 1 the frontier grows, below 1 it drains, and here the heap is a database, so the
 # same ratio is also the disk it is costing.
-my ($Pushed, $Expanded);
-my ($PaintId,    @Blk,     @Vis,    @Dist,     $Poradi);
+my ($Pushed,     $Expanded);
+my ($PaintId,    @Blk,    @Vis, @Dist, $Poradi);
 my ($PaintId_fr, @Vis_fr, @Buf_fr);    # dedicated state for paint_fr/is_frozen (boxes merged into @Vis_fr)
-my ($PocketMin, %FrozenMemo);          # is_frozen memoization: paint()'s pocket-min + verdict cache (small, RAM-only)
+my ($PocketMin,  %FrozenMemo);         # is_frozen memoization: paint()'s pocket-min + verdict cache (small, RAM-only)
 
 # The corridor and hole pattern tables, read once per process from the distribution's
 # data directory.
@@ -216,6 +214,7 @@ $LIMIT     = 30;
 #              this many GiB (Memory::used_gb(), one kernel call) -- a safety net so a
 #              run dies cleanly with its best-so-far instead of taking the machine down.
 $CACHE //= 536870912;    # 512 MB
+
 # The level's own env (<root>/Optimal/G<id>): a run that times out leaves its Bad and
 # Tahy waiting there for the next one. The third argument asks for the run scratch
 # (Pozice + Bucket + Expanded), which g_init opens empty and g_close deletes -- those
@@ -230,7 +229,6 @@ sub isbad     ($p) {Games::Sokoban::Solver::Berkeley::g_isbad($p)}
 # Uniform "arrayref or undef", matching Solver.pm's tahy_get contract.
 sub tahy_get ($p)     {Games::Sokoban::Solver::Berkeley::g_tahy_get($p)}
 sub tahy_set ($p, $k) {Games::Sokoban::Solver::Berkeley::g_tahy_set($p, $k)}
-sub tahy_del ($p)     {Games::Sokoban::Solver::Berkeley::g_tahy_del($p)}
 
 # Seen/Parent: a node's best sollen + its parent. seen_get returns the sollen or undef;
 # node_set writes sollen+parent together.
@@ -242,13 +240,13 @@ sub node_set   ($p, $par, $s) {Games::Sokoban::Solver::Berkeley::g_pos_set($p, $
 # The cost-ordered open list and the expanded set (the disk shapes of the
 # baseline's @Bucket and the %Seen low bit -- see the header). bq_pop returns
 # (cost, position) or the empty list when the queue is drained.
-sub bq_pop ()      {Games::Sokoban::Solver::Berkeley::g_bq_pop()}
-sub bq_trim ($b)   {Games::Sokoban::Solver::Berkeley::g_bq_trim($b)}
-sub bq_reset ()    {%BucketCnt = (); Games::Sokoban::Solver::Berkeley::g_bq_reset()}
-sub exp_set ($p)   {Games::Sokoban::Solver::Berkeley::g_exp_set($p)}
-sub exp_has ($p)   {Games::Sokoban::Solver::Berkeley::g_exp_has($p)}
-sub exp_del ($p)   {Games::Sokoban::Solver::Berkeley::g_exp_del($p)}
-sub seen_reset ()  {Games::Sokoban::Solver::Berkeley::g_pos_reset()}
+sub bq_pop ()    {Games::Sokoban::Solver::Berkeley::g_bq_pop()}
+sub bq_trim ($b) {Games::Sokoban::Solver::Berkeley::g_bq_trim($b)}
+sub bq_reset ()  {%BucketCnt = (); Games::Sokoban::Solver::Berkeley::g_bq_reset()}
+sub exp_set ($p) {Games::Sokoban::Solver::Berkeley::g_exp_set($p)}
+sub exp_has ($p) {Games::Sokoban::Solver::Berkeley::g_exp_has($p)}
+sub exp_del ($p) {Games::Sokoban::Solver::Berkeley::g_exp_del($p)}
+sub seen_reset () {Games::Sokoban::Solver::Berkeley::g_pos_reset()}
 
 # Insert $p at cost $g, keeping $N_Open/$MaxOpen honest. The only place the open
 # list grows. No membership test: a duplicate of a relaxed node is allowed and
@@ -304,67 +302,67 @@ sub trim_tail () {
 # recorded on its first arrival only. FIFO has no levels.)
 sub record_level () {
     $Level_at = $CurMin;
-} ## end sub record_level
+}
 
 sub clearvars() {
     ($Band_cur, $Band_dropped, $Band_total) = (0, 0, 0);
-    %BandMemo          = ();
-    @BandCfg           = ();
-    $Bestbet           = undef;
-    $Bestlen           = undef;
-    $bc                = undef;
-    $counter           = undef;
-    $timer             = undef;
-    $CurMin            = 0;
-    $Probed            = 0;
-    $Pushed            = undef;
-    $Expanded          = undef;
-    $Cas               = undef;
-    $Gameid            = undef;
-    $Blok              = undef;
-    $BlokVec           = undef;
-    $Corridor          = undef;
-    $Has_corridor      = undef;
-    $Has_hole          = undef;
-    $Has_wall          = undef;
-    $Hole              = undef;
-    $Nbox              = undef;
-    $W                 = undef;
-    $Wall              = undef;
-    $PaintId           = undef;
-    $PaintId_fr        = undef;
-    $PocketMin         = undef;
-    %FrozenMemo        = ();
-    $Poradi            = undef;
-    @Vis               = ();
-    @Blk               = ();
-    @Dist              = ();
-    @Vis_fr            = ();
-    %Bags              = ();
-    @Cg                = ();
-    %Cm                = ();
-    %Cmk               = ();
-    %Game              = ();
-    %Priority          = ();
-    %Pis               = ();
-    %InvPis            = ();
-    %Sols              = ();
-    @Target            = ();
+    %BandMemo     = ();
+    @BandCfg      = ();
+    $Bestbet      = undef;
+    $Bestlen      = undef;
+    $bc           = undef;
+    $counter      = undef;
+    $timer        = undef;
+    $CurMin       = 0;
+    $Probed       = 0;
+    $Pushed       = undef;
+    $Expanded     = undef;
+    $Cas          = undef;
+    $Gameid       = undef;
+    $Blok         = undef;
+    $BlokVec      = undef;
+    $Corridor     = undef;
+    $Has_corridor = undef;
+    $Has_hole     = undef;
+    $Has_wall     = undef;
+    $Hole         = undef;
+    $Nbox         = undef;
+    $W            = undef;
+    $Wall         = undef;
+    $PaintId      = undef;
+    $PaintId_fr   = undef;
+    $PocketMin    = undef;
+    %FrozenMemo   = ();
+    $Poradi       = undef;
+    @Vis          = ();
+    @Blk          = ();
+    @Dist         = ();
+    @Vis_fr       = ();
+    %Bags         = ();
+    @Cg           = ();
+    %Cm           = ();
+    %Cmk          = ();
+    %Game         = ();
+    %Priority     = ();
+    %Pis          = ();
+    %InvPis       = ();
+    %Sols         = ();
+    @Target       = ();
 
     # Bucket/Expanded/Seen/Parent/Tahy/Bad are not RAM structures here -- they live in
     # the per-game env, which bad_init() (re)opens and bad_close() disposes of.
     $Improved = 0;
     @MinSteps = ();
     @Baggage  = ();
-    @Buf     = ();
-    @Buf_fr  = ();
-    @Goal    = ();
-    @Maze    = ();
+    @Buf      = ();
+    @Buf_fr   = ();
+    @Goal     = ();
+    @Maze     = ();
 } ## end sub clearvars
 
 sub initvars ($gameid, $gm) {
     clearvars();
-    bad_init($gameid);    # opens the per-game env; every seam call below needs it
+    bad_init($gameid);                                                # opens the per-game env; every seam call below needs it
     %Game = %{ thaw(uncompress($gm)); };
     my $maze = $Game{'code'};
     $maze =~ tr/,//d;
@@ -373,9 +371,9 @@ sub initvars ($gameid, $gm) {
     $Game{'maze'} = &dclone(\@Maze);
     @Goal         = @{ $Game{'goal'}; };
     @Target       = ();
-    $Target[$_]   = 1 foreach @Goal;                             # cell-indexed goal flag (was %Target)
-    %Cm           = %{ $Game{'cm'};      };
-    %Cmk          = %{ $Game{'cmk'};     };
+    $Target[$_]   = 1 foreach @Goal;                                  # cell-indexed goal flag (was %Target)
+    %Cm           = %{ $Game{'cm'};  };
+    %Cmk          = %{ $Game{'cmk'}; };
     @Cg           = ();
     $Cg[$_]       = $Game{'cg'}{$_} foreach keys %{ $Game{'cg'} };    # cell-indexed walk graph (was %Cg)
     @Baggage      = @{ $Game{'baggage'}; };
@@ -383,15 +381,15 @@ sub initvars ($gameid, $gm) {
 
     # Parser already chose the position pack template ('C*' or 'n*') and packed
     # %Sols with it -- reuse it for every pack/unpack of a (man,@baggage) tuple.
-    $pu       = $Game{'vzp'};
-    $Cw       = ($pu =~ /^n/) ? 2 : 1;                                     # bytes per cell in a packed position (band keys)
-    $Band_zero = "\0" x int(($Game{'w'} * $Game{'h'} + 7) / 8);            # one bit per cell of the board
-    %Pis      = (-1, 'l', 1, 'r', $W, 'd', -$W, 'u');
-    %InvPis   = reverse %Pis;
-    $Nbox     = scalar @Baggage;
-    %Priority = %{ $Game{'order'}; };
+    $pu        = $Game{'vzp'};
+    $Cw        = ($pu =~ /^n/) ? 2 : 1;                                   # bytes per cell in a packed position (band keys)
+    $Band_zero = "\0" x int(($Game{'w'} * $Game{'h'} + 7) / 8);           # one bit per cell of the board
+    %Pis       = (-1, 'l', 1, 'r', $W, 'd', -$W, 'u');
+    %InvPis    = reverse %Pis;
+    $Nbox      = scalar @Baggage;
+    %Priority  = %{ $Game{'order'}; };
     ($Has_hole, $Has_wall, $Has_corridor) = @Game{ 'has_hole', 'has_wall', 'has_corridor' };
-    ($Blok, $BlokVec) = _blok_both($Game{'blok'});    # arrays (cold callers) + vecs (tahy hot path)
+    ($Blok, $BlokVec)                     = _blok_both($Game{'blok'});    # arrays (cold callers) + vecs (tahy hot path)
 
     # ASTAR: the per-cell push-distance floor, built only when the mode asks for it.
     # 'Inf' marks an unreachable goal in the blob and must not enter the minimum.
@@ -401,7 +399,7 @@ sub initvars ($gameid, $gm) {
         for my $cell (keys %{$steps}) {
             my $best;
             for my $g (values %{ $steps->{$cell} }) {
-                next if $g eq 'Inf';
+                next       if $g eq 'Inf';
                 $best = $g if !defined $best or $g < $best;
             }
             $MinSteps[$cell] = $best // 0;
@@ -411,23 +409,23 @@ sub initvars ($gameid, $gm) {
     $Hole     = &dclone($Game{'hole'})     if $Has_hole;
     $Wall     = &dclone($Game{'walls'})    if $Has_wall;
     $Corridor = &dclone($Game{'corridor'}) if $Has_corridor;
-    bq_reset();      # the env is open by now (bad_init above)
+    bq_reset();                             # the env is open by now (bad_init above)
     seen_reset();
-    $Bestbet    = undef;
-    $Bestlen    = 'Inf';
-    %Sols       = %{ $Game{'sols'} };
+    $Bestbet = undef;
+    $Bestlen = 'Inf';
+    %Sols    = %{ $Game{'sols'} };
 
     # Stop only at a REAL (tailless) solution; a checkpoint box-on-P entry carries a
     # move-string tail and is expanded like any other node (see Solver.pm).
-    %SolReal = ();
+    %SolReal     = ();
     $SolReal{$_} = 1 foreach grep {$Sols{$_} !~ /[A-Za-z]/} keys %Sols;
-    $PaintId    = 0;
-    $PaintId_fr = 0;
-    $Poradi     = 0;
-    @Blk        = (0) x scalar @Maze;
-    @Vis        = (0) x scalar @Maze;
-    @Dist       = (0) x scalar @Maze;
-    @Vis_fr     = (0) x scalar @Maze;
+    $PaintId     = 0;
+    $PaintId_fr  = 0;
+    $Poradi      = 0;
+    @Blk         = (0) x scalar @Maze;
+    @Vis         = (0) x scalar @Maze;
+    @Dist        = (0) x scalar @Maze;
+    @Vis_fr      = (0) x scalar @Maze;
 } ## end sub initvars
 
 # blok loader (dual-read REMOVED 2026-08-06, memory project_blok_vec_bench):
@@ -471,7 +469,7 @@ sub paint($man, @baggage) {
             $Vis[$t]    = $PaintId;
             $Dist[$t]   = $d;
             $Buf[$bt++] = $t;
-            $pmin = $t if $t < $pmin;
+            $pmin       = $t if $t < $pmin;
         }
     }
     $PocketMin = $pmin;
@@ -505,16 +503,17 @@ sub paint_fr($man, @baggage) {
 # whether the frozen wall encloses an open goal -- goal-corral);
 # ('', ()) if nothing stays frozen.
 sub is_frozen ($man, @nomove) {
+
     # Memoize the branch 0/1 verdict on (pocket-min, sorted nomove). $PocketMin (from
     # paint()'s last flood in tahy) canonically ids the man's reachable region: a cell
     # reachable under all-boxes-walls is reachable under frozen-only-walls too, so
     # (pocket-min, nomove) determines the man's paint_fr component -> the whole verdict.
     # Branch 2 (all frozen on goals) is NOT cached: the caller's goal-corral check needs
     # a FRESH @Vis_fr, so it must re-flood -- fall through and recompute. (RAM cache; small.)
-    my $key = $PocketMin . '|' . join(',', sort { $a <=> $b } @nomove);
+    my $key = $PocketMin . '|' . join(',', sort {$a <=> $b} @nomove);
     if (defined(my $v = $FrozenMemo{$key})) {
         return ('frozen', ()) if $v == 1;
-        return ('', ())       if $v == 0;
+        return ('',       ()) if $v == 0;
     }
     my %frozen = map(($_, 1), @nomove);
     while (1) {
@@ -535,9 +534,9 @@ sub is_frozen ($man, @nomove) {
         last if @still_frozen == scalar keys %frozen;
         %frozen = map(($_, 1), @still_frozen);
     } ## end while (1)
-    unless (%frozen) { $FrozenMemo{$key} = 0; return ('', ()) }
+    unless (%frozen) {$FrozenMemo{$key} = 0; return ('', ())}
     for (keys %frozen) {
-        unless ($Target[$_]) { $FrozenMemo{$key} = 1; return ('frozen', ()) }
+        unless ($Target[$_]) {$FrozenMemo{$key} = 1; return ('frozen', ())}
     }
     return ('', keys %frozen);    # branch 2: on-goal, not cached (goal-corral needs @Vis_fr)
 } ## end sub is_frozen
@@ -710,6 +709,7 @@ sub tahy ($pozice) {
         if (@frozen_set) {
             my @open = grep {!exists $Bags{$_}} @Goal;
             if (@open) {
+
                 # NO repaint: is_frozen()'s last fixed-point paint_fr($man, keys %frozen) IS
                 # paint_fr($man, @frozen_set) and nothing repaints @Vis_fr in between; reuse it.
                 # (Firstbet v2.6, +12.3%.)
@@ -720,7 +720,7 @@ sub tahy ($pozice) {
                     }
                 }
             }
-        }
+        } ## end if (@frozen_set)
     } ## end if (@nomove)
     if (@tahy) {
         tahy_set($pozice, [@tahy]);
@@ -786,7 +786,7 @@ sub get_path (@postup) {
 # saying the search exhausted a state space no real game exhausts. Neither is a clock
 # running out, and both used to look exactly like one. Durable line, hence backlinen.
 sub barva ($reason, $ending) {
-    state $colour = {'SOLVED', 'bright_green', 'TIMEOUT', 'bright_yellow'};
+    state $colour = { 'SOLVED', 'bright_green', 'TIMEOUT', 'bright_yellow' };
     backlinen(colored($ending, $colour->{$reason} // 'bright_red')) if $QUIET < 2;
 }
 
@@ -813,14 +813,14 @@ sub info() {
     #     the widest that level will ever show (once the dial stands in a bucket, nothing
     #     can be inserted into it -- every insert lands at least one move above).
     print {*STDERR} "\n" if !$QUIET and $Bestlen != $O_Bestbet;
-    if ($QUIET) { }    # no progress line: a threaded caller's workers would only interleave them
+    if    ($QUIET) { }    # no progress line: a threaded caller's workers would only interleave them
     elsif ($Fifo) {
 
         # FIFO has no ordered frontier, so the last two columns have nothing to say: there
         # is no lower bound to print and no bucket to count. Nine columns, as in 1.8.
         backline(
             sprintf '%10d ... %12d %9d %6d %9s %5.2f %12.2f %12.0f %12.0f %8d',
-            $Gameid, $counter, $N_Open, $N_Open - $O_Open, podil($N_Open,$MaxOpen,2),
+            $Gameid, $counter, $N_Open, $N_Open - $O_Open, podil($N_Open, $MaxOpen, 2),
             ($Expanded ? $Pushed / $Expanded : 0),    # children per parent that reach the heap
             $doba,
             $bc / $doba,
@@ -831,7 +831,7 @@ sub info() {
         print {*STDERR} "\n" if $CurMin != $O_CurMin;
         backline(
             sprintf '%10d ... %12d %9d %6d %9s %5.2f %12.2f %12.0f %12.0f %8d %5d %9d',
-            $Gameid, $counter, $N_Open, $N_Open - $O_Open, podil($N_Open,$MaxOpen,2),
+            $Gameid, $counter, $N_Open, $N_Open - $O_Open, podil($N_Open, $MaxOpen, 2),
             ($Expanded ? $Pushed / $Expanded : 0),    # children per parent that reach a bucket
             $doba,
             $bc / $doba,
@@ -857,14 +857,19 @@ sub parent_postup ($pozice) {
     # when restart() stopped building such a chain; see the baseline.
     my %on;
     while (($p = parent_get($p))) {    # '' at the root -> stops
-        confess(sprintf('parent_postup: the parent chain closes into a cycle on game %s after %d nodes',
-            $Gameid // '?', scalar @postup))
+        confess(
+            sprintf(
+                'parent_postup: the parent chain closes into a cycle on game %s after %d nodes',
+                $Gameid // '?',
+                scalar @postup
+            )
+            )
             if exists $on{$p};
         $on{$p} = undef;
         unshift @postup, $p;
     }
     return @postup;
-}
+} ## end sub parent_postup
 
 # Pure conversion, no side effects on %Seen/%Parent/@Heap: replays a move
 # string (e.g. firstbet.path -- lowercase = walk, uppercase = push) from the
@@ -922,6 +927,7 @@ sub restart (@postup) {
     $CurMin = 0;
     my $pushed = $Pushed;    # the enqueues below count path nodes; put back at the end
     $Fifo ? queue_add($root) : bucket_add($root, 0);
+
     for my $i (0 .. $#postup - 1) {
         my $pozice      = $postup[$i];
         my $next_pozice = $postup[$i + 1];
@@ -943,7 +949,6 @@ sub restart (@postup) {
         # parent_postup() then walks for ever. Keep the FIRST arrival, which is
         # also the cheaper one. See the baseline for the whole story (2026-09-10).
         next if seen_has($next_pozice);
-
         node_set($next_pozice, $pozice, $next_sollen);
         unless (exists $SolReal{$next_pozice}) {
             $Fifo ? queue_add($next_pozice) : bucket_add($next_pozice, $next_sollen);
@@ -1041,7 +1046,7 @@ sub save_improvement () {
         'pushes'  => ($path =~ tr/UDRL//),
         'counter' => $counter,
         'n_open'  => $N_Open,
-        'nstart'  => $nStart,    # FIFO's restarts so far; 0 in the bucket modes
+        'nstart'  => $nStart,                # FIFO's restarts so far; 0 in the bucket modes
         'path'    => $path,
     };
     $ON_IMPROVED->($path, $cas) if $ON_IMPROVED;
@@ -1084,8 +1089,8 @@ sub bublej ($child, $pozice, $sollen) {
         next if $sol >= $Bestlen;
         next if !$H_on and exp_has($grand);    # cost order: expanded = final
         my $gs = seen_get($grand);
-        next unless defined $gs;         # the cascade never discovers
-        next unless $gs > $sol;          # recurse only into a real improvement
+        next unless defined $gs;               # the cascade never discovers
+        next unless $gs > $sol;                # recurse only into a real improvement
         next if isbad($grand);
         bublej($grand, $child, $sol);
     }
@@ -1101,13 +1106,14 @@ sub hledej () {
     while (1) {
         ++$counter;
         info();
-        return 'TIMEOUT' if $LIMIT and tv_interval($timer) > $LIMIT and $N_Open/$MaxOpen > 0.7;
+        return 'TIMEOUT' if $LIMIT and tv_interval($timer) > $LIMIT and $N_Open / $MaxOpen > 0.7;
 
         # The race signal and the $MAX_GB safety net -- sampled every 4096 pops.
         unless ($counter & 4095) {
             return 'IGNORE' if race_lost();
             return 'MEMCAP' if $MAX_GB and Games::Sokoban::Solver::Memory::used_gb() > $MAX_GB;
         }
+
         # THE POPPED KEY IS THE ORDERING KEY, NOT THE COST. In DIAL the two are the same
         # thing; under ASTAR the key is f = g + h and the node's own cost g has to be read
         # from the record. Keeping them apart matters twice below: every child cost is
@@ -1123,8 +1129,8 @@ sub hledej () {
         $CurMin = $key;
         record_level() if $key > $Level_at;
         --$N_Open;
-        --$BucketCnt{$key};    # every popped entry was counted in by bucket_add
-        next if exp_has($pozice);    # already expanded -- a stale duplicate
+        --$BucketCnt{$key};                   # every popped entry was counted in by bucket_add
+        next if exp_has($pozice);             # already expanded -- a stale duplicate
         my $sol = seen_get($pozice) // -1;    # the position's own COST g
 
         # Relaxed while waiting: the cheaper copy did the work, and this entry's key no
@@ -1132,8 +1138,8 @@ sub hledej () {
         # insert is clamped (see bucket_add).
         next if ($H_on ? $sol + odhad($pozice) : $sol) != $key;
         next if isbad($pozice);
-        exp_set($pozice);                          # cheapest-first: this cost is FINAL
-        ++$Expanded;    # a real parent: denominator of info()'s children-per-parent
+        exp_set($pozice);    # cheapest-first: this cost is FINAL
+        ++$Expanded;         # a real parent: denominator of info()'s children-per-parent
         foreach my ($child, $step)(tahy($pozice)) {
             ++$bc;
             my $sollen = $sol + $step;
@@ -1304,28 +1310,31 @@ sub solve ($gameid, $gm, $first_path = undef) {
     # Resolve $MODE ONCE, before initvars can consult $H_on for the estimate tables. An
     # unknown mode dies here, loudly, rather than silently running as DIAL.
     confess("solve: unknown \$MODE '$MODE' (want DIAL, ASTAR or FIFO)")
-        unless $MODE eq 'DIAL' or $MODE eq 'ASTAR' or $MODE eq 'FIFO';
+        unless $MODE eq 'DIAL'
+        or $MODE eq 'ASTAR'
+        or $MODE eq 'FIFO';
     $Fifo = ($MODE eq 'FIFO')  ? 1 : 0;
     $H_on = ($MODE eq 'ASTAR') ? 1 : 0;
     initvars($gameid, $gm);
     $pozice = pack($pu, $Game{'player'}, @Baggage);
-    node_set($pozice, '', 0);             # Seen=0, Parent='' (root); the queue is empty after initvars
-    $N_Open   = 0;
-    $O_Open   = 0;    # last-print open count; must be set here too, not only in restart(), or an unseeded solve that runs past info()'s 6s threshold reads it undef (FATAL under 'uninitialized')
+    node_set($pozice, '', 0);    # Seen=0, Parent='' (root); the queue is empty after initvars
+    $N_Open = 0;
+    $O_Open = 0
+        ; # last-print open count; must be set here too, not only in restart(), or an unseeded solve that runs past info()'s 6s threshold reads it undef (FATAL under 'uninitialized')
     $MaxOpen  = 0;
     $CurMin   = 0;
-    $Level_at = -1;    # no level recorded yet (0 is a real level)
-    $Pushed   = 0;    # the enqueue increments it; zeroed before the root goes in
+    $Level_at = -1;                    # no level recorded yet (0 is a real level)
+    $Pushed   = 0;                     # the enqueue increments it; zeroed before the root goes in
     $Fifo ? queue_add($pozice) : bucket_add($pozice, 0);
-    $bc       = 0;
-    $counter  = 0;
-    $Pushed   = 0;    # same reason as $O_Open above: info() divides by them
-    $Expanded = 0;
-    $reason   = 'UNSOLVABLE';
-    $timer    = [&gettimeofday()];
-    $Gameid   = $gameid;
-    $Cas      = time();
-    @Track      = ();    # per-solve: a second solve() must not inherit the first's trajectory
+    $bc         = 0;
+    $counter    = 0;
+    $Pushed     = 0;                   # same reason as $O_Open above: info() divides by them
+    $Expanded   = 0;
+    $reason     = 'UNSOLVABLE';
+    $timer      = [&gettimeofday()];
+    $Gameid     = $gameid;
+    $Cas        = time();
+    @Track      = ();                  # per-solve: a second solve() must not inherit the first's trajectory
     $LastStatus = '';
 
     if (defined $first_path && length $first_path) {
@@ -1377,8 +1386,8 @@ sub solve ($gameid, $gm, $first_path = undef) {
             $Band_total += $Band_dropped;
             $Band_cur = ($BAND and $BAND < $Nbox) ? $BAND : 0;
             restart(parent_postup($Bestbet));
-        }
-    }
+        } ## end while (1)
+    } ## end else [ if (!$Fifo) ]
     $path  = undef;
     $doba  = tv_interval($timer);
     $plen  = 0;
@@ -1400,8 +1409,10 @@ sub solve ($gameid, $gm, $first_path = undef) {
         # a race) -- even a seeded/already-improved $Bestbet has NOT been proven optimal,
         # so this must NOT be reported SOLVED. All leave as TIMEOUT; the memory stop says
         # so loudly instead, and $LastStatus keeps the name.
-        say {*STDERR} colored(sprintf('OUT OF MEMORY (used %.2f GiB > MAX_GB %.2f)',
-                Games::Sokoban::Solver::Memory::used_gb(), $MAX_GB // 0), 'bright_red')
+        say {*STDERR}
+            colored(
+                sprintf('OUT OF MEMORY (used %.2f GiB > MAX_GB %.2f)', Games::Sokoban::Solver::Memory::used_gb(), $MAX_GB // 0),
+                'bright_red')
             if $status eq 'MEMCAP';
         $reason = 'TIMEOUT';
     }
@@ -1422,10 +1433,85 @@ sub solve ($gameid, $gm, $first_path = undef) {
     # Why the run ended, by name: a MEMCAP or IGNORE stop returns as TIMEOUT (see above)
     # but must not be laundered -- the console line is gone by morning.
     $LastStatus = ($status eq 'MEMCAP' or $status eq 'IGNORE') ? $status : $reason;
-    backlinen(sprintf 'BAND %d: %d children dropped, memo %d, track %d', $BAND,
-        $Band_total + $Band_dropped, scalar keys %BandMemo, scalar @BandCfg)
-        if $Fifo and $BAND and $QUIET < 2;
+    backlinen(
+        sprintf 'BAND %d: %d children dropped, memo %d, track %d',
+        $BAND,
+        $Band_total + $Band_dropped,
+        scalar keys %BandMemo,
+        scalar @BandCfg
+        )
+        if $Fifo
+        and $BAND
+        and $QUIET < 2;
     $reason = 'IGNORE' if $status eq 'IGNORE';
     return ($reason, $path, $doba, $bc, $counter);
 } ## end sub solve
 1;
+__END__
+
+=head1 NAME
+
+Games::Sokoban::Solver::Optimal::Berk - the optimal solver with its whole search on disk through BerkeleyDB
+
+=head1 SYNOPSIS
+
+    use Games::Sokoban::Solver::Berkeley ();
+    use Games::Sokoban::Solver::Optimal::Berk ();
+
+    $Games::Sokoban::Solver::Berkeley::ROOT      = '/var/tmp/soko-solver';
+    $Games::Sokoban::Solver::Optimal::Berk::CACHE = 512 * 1024 * 1024;    # the memory pool, bytes, at most 3 GB
+    $Games::Sokoban::Solver::Optimal::Berk::LIMIT = 3600;
+    my ($reason, $path, $seconds, $candidates, $pops)
+        = Games::Sokoban::Solver::Optimal::Berk::solve($label, $game_blob, $seed);
+
+=head1 DESCRIPTION
+
+The same C<solve> contract and the same search as L<Games::Sokoban::Solver::Optimal>,
+with every search structure -- the deadlock cache, the move cache, the
+positions with their cost and parent, the cost-ordered open list -- in one
+BerkeleyDB environment of the level's own under the root directory of
+L<Games::Sokoban::Solver::Berkeley>, so that a solve can run far past what
+memory alone allows. The memory pool C<$CACHE> is the RAM ceiling. After a
+TIMEOUT the deadlock and move caches stay in the level's directory and the
+next run on the same level starts from them; a proof removes the directory.
+
+This is a STORAGE twin: it differs from Optimal in where the structures live,
+never in which positions are searched or in what C<solve> returns (the
+distribution's gate holds the two to the same proved path). It is
+Games::Sokoban::SolverBerk 3.2 of the Sokoban project with the storage cut
+Optimal had. The BerkeleyDB module must be installed; L<Games::Sokoban::Solver>
+loads this module only when asked for it.
+
+=head1 INTERFACE
+
+C<solve($label, $game_blob, $seed)> and the run control of
+L<Games::Sokoban::Solver::Optimal/INTERFACE> (C<$LIMIT $MODE $BAND $MAX_GB
+$QUIET $RACE_FLAG $RACE_GID $ON_IMPROVED $LastStatus @Track>), plus
+C<$CACHE>, the pool in bytes. One process at a time per level directory: a
+second is refused by a lock file.
+
+=head1 CAVEATS
+
+The module keeps the pool size in 32 bits, so C<$CACHE> is at most 3 GB
+(L<Games::Sokoban::Solver::Berkeley> refuses more). The label is the name of
+the directory, so two levels with one label would share a store: the
+distribution's labels are a hash of the level.
+
+=head1 SEE ALSO
+
+L<Games::Sokoban::Solver::Optimal>, L<Games::Sokoban::Solver::Berkeley>,
+L<Games::Sokoban::Solver>.
+
+=head1 AUTHOR
+
+Jiri Broz, E<lt>jiri.krobot.broz@gmail.comE<gt>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2026 by Jiri Broz
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.42.2 or,
+at your option, any later version of Perl 5 you may have available.
+
+=cut

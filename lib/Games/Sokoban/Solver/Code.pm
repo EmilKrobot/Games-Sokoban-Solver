@@ -36,24 +36,27 @@ package Games::Sokoban::Solver::Code;
 # Lineage: Games::Sokoban::Code 1.0 of the Sokoban project, whose
 # game_blob.code_blob, game_blob.code and game_data.firststep this module
 # reproduces on every level of that project's collection (xt/eq_code.pl).
-
 use v5.42;
 use warnings FATAL => 'uninitialized';
-use Carp     ();
+use Carp ();
 use Storable ('dclone');
 use Games::Sokoban::Solver::Data ();
-
 our $VERSION = '0.01';
-
 my ($Zmena, $W, $H, %Cells, @Maze, $Player, $Code, @Holes, %RealHole, $FirstStep, @Goal, @Baggage, %Game, %Avoid, %Cg);
 my %Hole_templates = %{ Games::Sokoban::Solver::Data::load('hole_templates.stor') };
 
 # A level this module cannot reduce: one sentence, the board as it stands, and
 # the record of the corridor that stopped it.
 sub _refuse ($why, $hole = undef) {
-    my $board = join("\n", map { tr/0123456789/  \-.$@@*+#/r } split /,/, $Code, -1);
-    my $where = $hole ? sprintf("\n  corridor cells %s, contents '%s', direction %s, entry %s, after %s",
-        join(' ', @{ $hole->{'hole'} }), $hole->{'ostr'}, $hole->{'smer'}, $hole->{'sentry'}, $hole->{'safter'}) : '';
+    my $board = join("\n", map {tr/0123456789/  \-.$@@*+#/r} split /,/, $Code, -1);
+    my $where =
+        $hole
+        ? sprintf(
+            "\n  corridor cells %s, contents '%s', direction %s, entry %s, after %s",
+            join(' ', @{ $hole->{'hole'} }),
+            $hole->{'ostr'}, $hole->{'smer'}, $hole->{'sentry'}, $hole->{'safter'}
+        )
+        : '';
     Carp::croak("REFUSED: $why$where\n$board\n");
 }
 
@@ -78,7 +81,6 @@ sub apply ($key, $h) {
     return;
 } ## end sub apply
 
-
 sub translines(@lines) {
     my @c;
     foreach $_ (@lines) {
@@ -87,7 +89,6 @@ sub translines(@lines) {
     }
     return @c;
 }
-
 
 sub shrink(@lines) {
     my ($w, $h) = (length($lines[0]), scalar @lines);
@@ -101,7 +102,6 @@ sub shrink(@lines) {
     @lines = translines(@lines);
     return @lines;
 }
-
 
 sub init($code) {
     $Zmena   = 0;
@@ -138,7 +138,6 @@ sub init($code) {
     }
 } ## end sub init
 
-
 sub dummy() {
     my $Zmena   = 0;
     my $pocet   = $#Maze;
@@ -169,7 +168,6 @@ sub dummy() {
     }
 } ## end sub dummy
 
-
 sub rohy() {
     $Zmena = 0;
     foreach my $x (sort {$a <=> $b} @Goal) {
@@ -190,7 +188,6 @@ sub rohy() {
         rohy();
     }
 } ## end sub rohy
-
 
 sub find_avoid {
     my ($pos, @buf);
@@ -226,7 +223,6 @@ sub find_avoid {
     }
     $Code = join(',', unpack("(a$W)*", join('', @Maze)));
 } ## end sub find_avoid
-
 
 sub holes() {
     @Holes = ();
@@ -405,7 +401,7 @@ CELL: foreach my $x (sort {$a <=> $b} keys %Cells) {
                 $FirstStep .= uc($h->{'smer'}) . uc($h->{'smer'});
                 $Zmena = 1;
                 last HOLE;
-            } ## end elsif ($ostr eq '64')
+            }
             elsif ($ostr =~ /^8[47][03]*$/aa) {
                 if ($key =~ /[03]{2}$/aa) {
                     $Maze[$h->{'hole'}[0]] = 3;
@@ -419,7 +415,7 @@ CELL: foreach my $x (sort {$a <=> $b} keys %Cells) {
                 $FirstStep .= uc($h->{'smer'}) x length($ostr);
                 $Zmena = 1;
                 last HOLE;
-            } ## end elsif ($ostr =~ /^8[47][03]*$/aa)
+            }
             elsif ($ostr eq '67') {
                 if ($key =~ /[03]{2}$/aa) {
                     $Maze[$h->{'hole'}[0]] = 9;
@@ -433,7 +429,7 @@ CELL: foreach my $x (sort {$a <=> $b} keys %Cells) {
                 else {
                     _refuse('the box on a goal in front of the player in a dead-end corridor cannot be pushed out', $h);
                 }
-            } ## end elsif ($ostr eq '67')
+            }
             else {
                 _refuse("a dead-end corridor the templates do not know: '$key'", $h);
             }
@@ -449,7 +445,6 @@ CELL: foreach my $x (sort {$a <=> $b} keys %Cells) {
         }
     } ## end if (@Holes)
 } ## end sub holes
-
 
 sub prepare($code) {
     $code =~ tr/1/9/;
@@ -470,7 +465,6 @@ sub prepare($code) {
     if ($nbox != $ngoal or $nplayer != 1) {
         _refuse(sprintf('broken level after the reduction: %d boxes, %d goals, %d players', $nbox, $ngoal, $nplayer));
     }
-
     %Game              = ();
     $Game{'goal'}      = dclone \@Goal;
     $Game{'baggage'}   = dclone \@Baggage;
@@ -488,9 +482,7 @@ sub prepare($code) {
     }
     return %Game;
 } ## end sub prepare
-
 1;
-
 __END__
 
 =head1 NAME

@@ -9,54 +9,63 @@
 use v5.42;
 use Test::More;
 use Config;
-
 ok($Config{'ivsize'} >= 8, 'perl has 64-bit integers (the pattern masks need them)');
 
 # Grows with every step of the plan: one name per module of the distribution.
 my @modules = (
-    'Games::Sokoban::Solver',          'Games::Sokoban::Solver::Data',   'Games::Sokoban::Solver::Console',
-    'Games::Sokoban::Solver::Memory',  'Games::Sokoban::Solver::Heap',   'Games::Sokoban::Solver::Munkres',
-    'Games::Sokoban::Solver::Path',    'Games::Sokoban::Solver::Replay',
-    'Games::Sokoban::Solver::Level',   'Games::Sokoban::Solver::Code',   'Games::Sokoban::Solver::Finder',
-    'Games::Sokoban::Solver::Parser',  'Games::Sokoban::Solver::Festival::Analysis', 'Games::Sokoban::Solver::Fest::Analysis',
-    'Games::Sokoban::Solver::Firstbet', 'Games::Sokoban::Solver::FirstBack', 'Games::Sokoban::Solver::Festival',
-    'Games::Sokoban::Solver::Fest',     'Games::Sokoban::Solver::Optimal',
-    'Games::Sokoban::Solver::Race',     'Games::Sokoban::Solver::Portfolio', 'Games::Sokoban::Solver::Config',
+    'Games::Sokoban::Solver',                     'Games::Sokoban::Solver::Data',
+    'Games::Sokoban::Solver::Console',            'Games::Sokoban::Solver::Memory',
+    'Games::Sokoban::Solver::Heap',               'Games::Sokoban::Solver::Munkres',
+    'Games::Sokoban::Solver::Path',               'Games::Sokoban::Solver::Replay',
+    'Games::Sokoban::Solver::Level',              'Games::Sokoban::Solver::Code',
+    'Games::Sokoban::Solver::Finder',             'Games::Sokoban::Solver::Parser',
+    'Games::Sokoban::Solver::Festival::Analysis', 'Games::Sokoban::Solver::Fest::Analysis',
+    'Games::Sokoban::Solver::Firstbet',           'Games::Sokoban::Solver::FirstBack',
+    'Games::Sokoban::Solver::Festival',           'Games::Sokoban::Solver::Fest',
+    'Games::Sokoban::Solver::Optimal',            'Games::Sokoban::Solver::Race',
+    'Games::Sokoban::Solver::Portfolio',          'Games::Sokoban::Solver::Config',
 );
-
 use_ok($_) for @modules;
 
 # The BerkeleyDB branch is optional: its three modules load where the
 # BerkeleyDB module is installed, and are not asked for where it is not.
-if (eval { require BerkeleyDB; 1 }) {
-    use_ok($_) for 'Games::Sokoban::Solver::Berkeley', 'Games::Sokoban::Solver::Firstbet::Berk', 'Games::Sokoban::Solver::Optimal::Berk';
+if (eval {require BerkeleyDB; 1}) {
+    use_ok($_)
+        for 'Games::Sokoban::Solver::Berkeley', 'Games::Sokoban::Solver::Firstbet::Berk', 'Games::Sokoban::Solver::Optimal::Berk';
 }
-else { note('BerkeleyDB is not installed: the optional branch is not loaded') }
-
+else {note('BerkeleyDB is not installed: the optional branch is not loaded')}
 my $main = $INC{'Games/Sokoban/Solver.pm'};
 ok(defined $main, 'Games::Sokoban::Solver was loaded from a file');
 (my $root = $main) =~ s{[\\/]Games[\\/]Sokoban[\\/]Solver\.pm\z}{};
 $root =~ tr{\\}{/};
 note("library root: $root");
-
-for my $file (sort grep { m{\AGames/Sokoban/} } keys %INC) {
+for my $file (sort grep {m{\AGames/Sokoban/}} keys %INC) {
     (my $from = $INC{$file}) =~ tr{\\}{/};
     ok(index($from, $root) == 0, "$file comes from this tree, not from PERL5LIB ($from)");
 }
-
-ok(!defined &Handy::backline,          'nothing loaded the other project\'s Handy');
-ok(!defined &Games::Munkres::assign,   'nothing loaded the other project\'s Games::Munkres');
-ok(!Games::Numeric->can('new'),        'nothing loaded the other project\'s Games::Numeric');
+ok(!defined &Handy::backline,                 'nothing loaded the other project\'s Handy');
+ok(!defined &Games::Munkres::assign,          'nothing loaded the other project\'s Games::Munkres');
+ok(!Games::Numeric->can('new'),               'nothing loaded the other project\'s Games::Numeric');
 ok(!defined &Games::Sokoban::Firstbet::solve, 'nothing loaded the other project\'s Firstbet');
 ok(!defined &Games::Sokoban::Solver::solve,   'the main module is the facade, not the other project\'s optimal solver');
-ok(!defined &Games::Sokoban::Festival::solve && !defined &Games::Sokoban::Fest::solve && !defined &Games::Sokoban::FirstBack::solve,
-    'nothing loaded the other project\'s Festival, Fest or FirstBack');
+ok(
+    !defined &Games::Sokoban::Festival::solve
+        && !defined &Games::Sokoban::Fest::solve
+        && !defined &Games::Sokoban::FirstBack::solve,
+    'nothing loaded the other project\'s Festival, Fest or FirstBack'
+  );
 ok(!defined &Games::Berkeley::g_init && !defined &Games::Sokoban::Zapis::save_bestbet && !$INC{'DBI.pm'},
     'no BerkeleyDB seam, no database writer, no DBI');
-ok(!defined &Games::Sokoban::Race::new && !defined &Games::Sokoban::Tandem::solve && !defined &Games::Sokoban::Portfolio::firstbet_modes,
-    'nothing loaded the other project\'s Race, Tandem or Portfolio');
-ok(!$INC{'threads.pm'} && !$INC{'threads/shared.pm'} && !$INC{'Thread/Queue.pm'},
-    'loading Race does not load the thread modules (they come at start() of a threaded pool)');
+ok(
+    !defined &Games::Sokoban::Race::new
+        && !defined &Games::Sokoban::Tandem::solve
+        && !defined &Games::Sokoban::Portfolio::firstbet_modes,
+    'nothing loaded the other project\'s Race, Tandem or Portfolio'
+  );
+ok(
+    !$INC{'threads.pm'} && !$INC{'threads/shared.pm'} && !$INC{'Thread/Queue.pm'},
+    'loading Race does not load the thread modules (they come at start() of a threaded pool)'
+  );
 
 # A file that is not a .pm travels with the modules and is installed beside
 # them: this is what the data tables of the distribution rely on.
@@ -70,12 +79,13 @@ my %table = (
     'corridor_pattern.stor' => [175588, 225],
     'fest_patterns.stor'    => [37956,  2],
 );
+
 for my $name (sort keys %table) {
     my ($bytes, $entries) = @{ $table{$name} };
     my $file = Games::Sokoban::Solver::Data::path($name);
     is(-s $file, $bytes, "$name is $bytes bytes");
     my $ref = Games::Sokoban::Solver::Data::load($name);
-    is(ref $ref, 'HASH', "$name thaws to a hash");
+    is(ref $ref,          'HASH',   "$name thaws to a hash");
     is(scalar keys %$ref, $entries, "$name holds $entries entries");
 }
 {
@@ -83,7 +93,6 @@ for my $name (sort keys %table) {
     is(scalar @{ $fest->{'patterns'} },      116, 'fest_patterns: 116 push patterns');
     is(scalar @{ $fest->{'pull_patterns'} }, 60,  'fest_patterns: 60 pull patterns');
 }
-ok(!eval { Games::Sokoban::Solver::Data::load('no_such.stor'); 1 }, 'a missing table dies');
+ok(!eval {Games::Sokoban::Solver::Data::load('no_such.stor'); 1}, 'a missing table dies');
 like($@, qr/no table .*no_such\.stor/, '... naming the file');
-
 done_testing;

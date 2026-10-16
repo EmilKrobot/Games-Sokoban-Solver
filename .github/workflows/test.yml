@@ -1,0 +1,40 @@
+# The tests of the distribution on Linux and Windows, with perl 5.42 built
+# with ithreads: the suite, then the program on the micro levels with threads
+# and without. The BerkeleyDB branch is not installed here (its tests skip).
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.42'
+          multi-thread: true
+      - name: perl -V
+        run: perl -V
+      - name: install the prerequisites
+        run: cpanm --notest --installdeps .
+      - name: build and test
+        run: |
+          perl Makefile.PL
+          make
+          make test
+        shell: bash
+      - name: the program, one task at a time
+        run: perl -Ilib bin/soko-solver.pl --no-ini --jobs 1 --time 10 --optimal 5 t/data/micro.xsb
+      - name: the program, with threads
+        run: perl -Ilib bin/soko-solver.pl --no-ini --jobs 2 --time 10 --optimal 5 --format json t/data/micro.xsb
+      - name: the program, no threads on a threaded perl
+        run: perl -Ilib bin/soko-solver.pl --no-ini --no-threads --time 10 --optimal 5 t/data/micro.xsb
+      - name: the memory probe on this machine
+        run: perl -Ilib -MGames::Sokoban::Solver::Memory -e 'printf "scope %s, %.1f GB in use of %.1f\n", Games::Sokoban::Solver::Memory::scope(), Games::Sokoban::Solver::Memory::used_gb(), Games::Sokoban::Solver::Memory::total_gb()'

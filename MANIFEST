@@ -53,6 +53,7 @@ t/12-portfolio.t
 t/13-race.t
 t/14-solver.t
 t/15-cli.t
+t/16-pod.t
 t/17-config.t
 t/18-berkeley.t
 t/data/micro.xsb

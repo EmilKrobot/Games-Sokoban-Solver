@@ -4,18 +4,16 @@
 use v5.42;
 use Test::More;
 use lib 't/lib';
-use BruteForce ();
+use BruteForce                      ();
 use Games::Sokoban::Solver::Level   ();
 use Games::Sokoban::Solver::Code    ();
 use Games::Sokoban::Solver::Parser  ();
 use Games::Sokoban::Solver::Replay  ();
 use Games::Sokoban::Solver::Optimal ();
-
 $Games::Sokoban::Solver::Optimal::QUIET = 2;
 $Games::Sokoban::Solver::Optimal::LIMIT = 30;
-
 open my $fh, '<', 't/data/micro.xsb' or die $!;
-my $text = do { local $/; <$fh> };
+my $text = do {local $/; <$fh>};
 close $fh;
 my @levels = Games::Sokoban::Solver::Level::read($text);
 
@@ -29,7 +27,6 @@ sub long_seed ($code, $optimum) {
     die "the long seed does not play" if defined Games::Sokoban::Solver::Replay::check($code, $seed);
     return $seed;
 }
-
 for my $level (@levels) {
     my ($code0, $code1) = Games::Sokoban::Solver::Level::normalize($level->{'rows'});
     my %code = Games::Sokoban::Solver::Code::prepare($code1);
@@ -39,47 +36,47 @@ for my $level (@levels) {
     my $best = BruteForce::solve($code{'code'});
     ok(defined $best, "$level->{'title'}: the oracle solves the reduced level");
     my $seed = long_seed($code{'code'}, $best);
+
     for my $mode ('DIAL', 'ASTAR', 'FIFO') {
         $Games::Sokoban::Solver::Optimal::MODE = $mode;
         for my $start ([undef, 'no seed'], [$seed, 'a long seed']) {
             my ($given, $what) = @$start;
             next if $what eq 'a long seed' and !defined $given;
             my @calls;
-            $Games::Sokoban::Solver::Optimal::ON_IMPROVED = sub ($path, $cas) { push @calls, $path };
+            $Games::Sokoban::Solver::Optimal::ON_IMPROVED = sub ($path, $cas) {push @calls, $path};
             my ($reason, $path, $secs, $bc, $pops) = Games::Sokoban::Solver::Optimal::solve(7, $blob, $given);
             my $tag = "$level->{'title'}, $mode, $what";
-            is($reason, 'SOLVED', "$tag: proved");
+            is($reason,      'SOLVED',     "$tag: proved");
             is(length $path, length $best, "$tag: the optimum of the oracle (" . length($best) . ' moves)');
             is(Games::Sokoban::Solver::Replay::check($code{'code'}, $path), undef, "$tag: the path plays");
             ok($bc > 0 && $pops > 0, "$tag: candidates and pops counted");
             is($Games::Sokoban::Solver::Optimal::LastStatus, 'SOLVED', "$tag: the stop is named SOLVED");
+
             if (defined $given) {
                 ok(@calls >= 1, "$tag: the seed was bettered, ON_IMPROVED called " . scalar(@calls) . ' time(s)');
                 is(scalar @calls, scalar @Games::Sokoban::Solver::Optimal::Track, "$tag: once per entry of \@Track");
-                is($calls[-1], $path, "$tag: the last improvement is the answer");
+                is($calls[-1],    $path,                                          "$tag: the last improvement is the answer");
             }
             else {
                 is(scalar @calls, scalar @Games::Sokoban::Solver::Optimal::Track, "$tag: ON_IMPROVED and \@Track agree");
             }
-        }
-    }
+        } ## end for my $start ([undef, ...])
+    } ## end for my $mode ('DIAL', 'ASTAR'...)
     $Games::Sokoban::Solver::Optimal::ON_IMPROVED = undef;
-}
+} ## end for my $level (@levels)
 
 # An unknown mode is refused; a limit already spent returns the seed as TIMEOUT.
 {
-    my ($level) = grep { $_->{'title'} eq 'Three boxes in a room' } @levels;
+    my ($level) = grep {$_->{'title'} eq 'Three boxes in a room'} @levels;
     my ($code0, $code1) = Games::Sokoban::Solver::Level::normalize($level->{'rows'});
     my %code = Games::Sokoban::Solver::Code::prepare($code1);
     my %game = Games::Sokoban::Solver::Parser::parse(\%code);
     my $blob = Games::Sokoban::Solver::Parser::blob(\%game);
     my $best = BruteForce::solve($code{'code'});
     my $seed = long_seed($code{'code'}, $best) // $best;
-
     $Games::Sokoban::Solver::Optimal::MODE = 'FAST';
-    ok(!eval { Games::Sokoban::Solver::Optimal::solve(7, $blob, $seed); 1 }, 'an unknown mode is refused');
+    ok(!eval {Games::Sokoban::Solver::Optimal::solve(7, $blob, $seed); 1}, 'an unknown mode is refused');
     like($@, qr/unknown \$MODE 'FAST'/, '... by name');
-
     $Games::Sokoban::Solver::Optimal::MODE  = 'DIAL';
     $Games::Sokoban::Solver::Optimal::LIMIT = 0.000001;
     my ($reason, $path) = Games::Sokoban::Solver::Optimal::solve(7, $blob, $seed);
@@ -98,6 +95,5 @@ for my $level (@levels) {
 }
 
 # The copy loads neither BerkeleyDB nor a database module.
-is_deeply([grep { m{Berkeley|DBI|SokDB|Zapis} } sort keys %INC], [], 'no storage module loaded');
-
+is_deeply([grep {m{Berkeley|DBI|SokDB|Zapis}} sort keys %INC], [], 'no storage module loaded');
 done_testing;

@@ -11,8 +11,8 @@
 use v5.42;
 use Test::More;
 use lib 't/lib';
-use BruteForce ();
-use Games::Sokoban::Solver::Path ();
+use BruteForce                     ();
+use Games::Sokoban::Solver::Path   ();
 use Games::Sokoban::Solver::Replay ();
 
 sub rebuilt ($code, $path) {
@@ -23,7 +23,7 @@ sub rebuilt ($code, $path) {
 # or how it died).
 sub both ($code, $path) {
     my $check = Games::Sokoban::Solver::Replay::check($code, $path);
-    my $built = eval { rebuilt($code, $path) };
+    my $built = eval {rebuilt($code, $path)};
     my $died  = $@;
     return ($check, $built, $died);
 }
@@ -46,6 +46,7 @@ my %level = (
     'two boxes side by side'          => '999999,900009,904409,903359,999999',
     'two columns, no walls at all'    => '50,40,30',
 );
+
 # A wall step from the start, per level: the player's neighbour in that
 # direction is a wall (or off the board).
 my %wall_step = (
@@ -53,43 +54,45 @@ my %wall_step = (
     'two boxes side by side'          => 'd',
     'two columns, no walls at all'    => 'u',
 );
+
 # A harmless detour from the start: two steps that go and come back over floor.
 my %detour = (
     'one box, a corner to walk round' => 'rl',
     'two boxes side by side'          => 'lr',
 );
-
 for my $name (sort keys %level) {
     my $code = $level{$name};
     my $sol  = BruteForce::solve($code);
     ok(defined $sol && length $sol, "$name: the oracle found a solution (" . ($sol // '') . ')');
     next unless defined $sol;
-
     my ($built) = agree($code, $sol, "$name: the oracle's solution");
     is(length($built // ''), length $sol, "$name: rebuilt is as long as the oracle's shortest solution");
     is(Games::Sokoban::Solver::Replay::check($code, $built // ''), undef, "$name: the rebuilt path replays too");
 
     # spoiled before the solution: each must be refused by both readings
-    agree($code, 'X' . $sol,                   "$name: a letter that is none");
-    agree($code, $wall_step{$name} . $sol,     "$name: a step into a wall or off the board");
-    agree($code, substr($sol, 0, -1),          "$name: cut short, a goal still empty");
+    agree($code, 'X' . $sol,               "$name: a letter that is none");
+    agree($code, $wall_step{$name} . $sol, "$name: a step into a wall or off the board");
+    agree($code, substr($sol, 0, -1),      "$name: cut short, a goal still empty");
 
     # letters after the solution: dropped by rebuilt, played by Replay
-    is(eval { rebuilt($code, $sol . 'X') }, $built, "$name: rebuilt drops what follows the solution, even a letter that is none");
-    like(Games::Sokoban::Solver::Replay::check($code, $sol . 'X'), qr/bad move char/, "$name: ... while Replay plays on and refuses it");
-
+    is(eval {rebuilt($code, $sol . 'X')}, $built, "$name: rebuilt drops what follows the solution, even a letter that is none");
+    like(
+        Games::Sokoban::Solver::Replay::check($code, $sol . 'X'),
+        qr/bad move char/,
+        "$name: ... while Replay plays on and refuses it"
+    );
     if (my $detour = $detour{$name}) {
         my ($built2) = agree($code, $detour . $sol, "$name: a detour that goes and comes back");
         is(length($built2 // ''), length $sol, "$name: rebuilt drops the detour and is as long as the solution");
     }
-}
+} ## end for my $name (sort keys...)
 
 # A push against another box, and a push against a wall.
 {
     my $code = '999999,954439,999999';    # player, two boxes in a row, a goal, a wall
     agree($code, 'R', 'a push of a box into a box is refused by both');
     my $wall = '99999,95439,99999';       # player, box, goal, wall: R solves, RR pushes into the wall
-    agree($wall, 'R',  'one box pushed onto its goal is accepted by both');
+    agree($wall, 'R', 'one box pushed onto its goal is accepted by both');
     is(rebuilt($wall, 'RR'), 'R', 'a second push after the solution is dropped by rebuilt');
     like(Games::Sokoban::Solver::Replay::check($wall, 'RR'), qr/illegal push/, '... while Replay refuses the push into the wall');
 }
@@ -97,7 +100,7 @@ for my $name (sort keys %level) {
 # The case of the letters is read off the board, not trusted.
 {
     my $code = '99999,95439,99999';
-    is(rebuilt($code, 'r'), 'R', 'a lower-case letter that pushes comes back as a push');
+    is(rebuilt($code, 'r'),                               'R',   'a lower-case letter that pushes comes back as a push');
     is(Games::Sokoban::Solver::Replay::check($code, 'r'), undef, '... and Replay accepts it as one');
 }
 
@@ -105,5 +108,4 @@ for my $name (sort keys %level) {
 is(BruteForce::solve('99999,97599,99999'),    '',    'a level solved before the first step: the empty path');
 is(BruteForce::solve('999999,954039,999999'), 'RR',  'a box two cells from its goal: the oracle finds RR');
 is(BruteForce::solve('9999,9549,9939,9999'),  undef, 'a box in a corner: no solution');
-
 done_testing;

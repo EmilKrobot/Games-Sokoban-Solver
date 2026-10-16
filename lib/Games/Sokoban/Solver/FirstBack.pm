@@ -84,15 +84,13 @@ package Games::Sokoban::Solver::FirstBack;
 # called from one place is written out where it was called. So the battery can
 # no longer be compared with Firstbet's sub by sub: a fix made there has to be
 # carried over by hand.
-
 our $VERSION = '0.01';
-
 use v5.42;
 use warnings FATAL => 'uninitialized';
 no warnings 'recursion';
-use Carp           ('confess');
-use Time::HiRes    ('tv_interval', 'gettimeofday');
-use Storable       ('thaw', 'dclone');
+use Carp        ('confess');
+use Time::HiRes ('tv_interval', 'gettimeofday');
+use Storable    ('thaw', 'dclone');
 use Compress::Zlib;
 use Term::ANSIColor;
 use Games::Sokoban::Solver::Console ('backline', 'backlinen', 'podil');
@@ -108,12 +106,11 @@ our ($RACE_FLAG, $RACE_GID);    # a Race worker's cooperative cancellation
 our $MAX_GB = 0;                # GiB of the WHOLE machine's RAM in use; 0 = off
 
 # ---- the three numbers of the pushing; tuned by editing them here
-my $CAP   = 250;       # forward expansions per attempt; 0 = no attempts, pull only
-my $AGE   = 50;        # pull expansions the best position has to stay the best before it is tried
-my $STALE = 50_000;    # pull expansions without a better position before the tried one is tried again; 0 = never
-
-my $BIG    = 1_000_000;    # "cannot" in a matching's matrix
-my $SCREEN = 6;            # seconds between two progress lines
+my $CAP    = 250;               # forward expansions per attempt; 0 = no attempts, pull only
+my $AGE    = 50;                # pull expansions the best position has to stay the best before it is tried
+my $STALE  = 50_000;            # pull expansions without a better position before the tried one is tried again; 0 = never
+my $BIG    = 1_000_000;         # "cannot" in a matching's matrix
+my $SCREEN = 6;                 # seconds between two progress lines
 my $ENDING = '%-12s %5d %3d %4d %-10s %6d %6d %12.4f %8s %8s %8s %8s %9s';
 
 # ---- the corridor and hole pattern tables, read once per process
@@ -123,7 +120,6 @@ my $holes     = Games::Sokoban::Solver::Data::load('hole_pattern.stor');
 # Only what more than one procedure touches is declared at file scope; solve()
 # loads all of it and hands it back at its end. What one procedure alone uses
 # is a `my` inside it.
-
 # ---- the game
 my (@Cg, %Cm, %Cmk, @Goal, @IsWall, @Maze, %Pis, @Target, $W);
 
@@ -137,10 +133,10 @@ my ($Match_active, %ReachG, %ReachW, %Rev, %Selective);
 
 # ---- the forward search: what is dead, who is whose father, whose children
 # survived
-my (%MemBad, %Parent, %Tahy);
-my (@Blk, @Buf, $PaintId, @Vis);               # paint(): the player's region of the position being expanded
-my (@Buf_fr, $PaintId_fr, @Vis_fr);            # paint_fr(): the frozen test's own
-my (@Buf_c, %CanonMap, $PaintId_c, @Vis_c);    # class keys
+my (%MemBad, %Parent,     %Tahy);
+my (@Blk,    @Buf,        $PaintId, @Vis);        # paint(): the player's region of the position being expanded
+my (@Buf_fr, $PaintId_fr, @Vis_fr);               # paint_fr(): the frozen test's own
+my (@Buf_c,  %CanonMap,   $PaintId_c, @Vis_c);    # class keys
 
 # the offered arrangement: pushes to each of its cells, a flag per cell, its
 # cells
@@ -148,11 +144,9 @@ my (@DistTo, @IsTgt, @Tgt);
 
 # ---- the pull search: the pulled positions by box layout, and by key
 my (%Blay, %Bseen);
-
 ##############################################################################
 # ===== Paths =================================
 ##############################################################################
-
 # The player's shortest walk from $m to $target among the boxes @$baggage, as
 # step letters.
 sub cesta($m, $target, $baggage) {
@@ -241,11 +235,9 @@ sub stitch_tail($pos, $tail) {
     }
     return $path;
 } ## end sub stitch_tail
-
 ##############################################################################
 # ===== What both procedures stand on =========
 ##############################################################################
-
 # The class key: the region of $man with @$bag as walls, named by its smallest
 # cell.
 sub canon_key($man, $bag) {
@@ -373,11 +365,9 @@ sub value_target($t_bag) {
     }
     return Games::Sokoban::Solver::Munkres::assign(\@matrix);
 }
-
 ##############################################################################
 # ===== The two searches ======================
 ##############################################################################
-
 my $Ftries = 0;    # push attempts of the whole solve
 my $Fpops  = 0;    # forward expansions of the whole solve
 my $Fseen  = 0;    # forward positions seen, all attempts together
@@ -1174,9 +1164,8 @@ sub solve($gameid, $gm, $limit, $ = undef) {
             );
         return $MAX_GB && Games::Sokoban::Solver::Memory::used_gb() > $MAX_GB ? 'MEMCAP' : '';
     }; ## end $check = sub
-
     my @goals = sort {$a <=> $b} @Goal;
-    my %Q;                             # the open list: h -> [keys], FIFO inside a bucket
+    my %Q;                                           # the open list: h -> [keys], FIFO inside a bucket
     my $Hq = 'Games::Sokoban::Solver::Heap'->new;    # the live buckets, the smallest h on top
     my ($found, $path);
     my $reason = 'UNSOLVABLE';
@@ -1223,7 +1212,10 @@ sub solve($gameid, $gm, $limit, $ = undef) {
             }
         }
         $best_h = $h if !defined $best_h or $h < $best_h;    # the root is never offered
-        push @{ $Q{$h} //= do {$Hq->add($h, $h); []} }, $pos;
+        push @{
+            $Q{$h} //= do {$Hq->add($h, $h); []}
+            },
+            $pos;
         ++$nopen;
     } ## end for my $m (keys %reps)
     $MaxOpen = $nopen;
@@ -1277,7 +1269,10 @@ PULL: while (!defined $found && $nopen) {
                 if ($h < $best_h) {
                     ($best_key, $best_h, $best_since, $tried) = ($npos, $h, $counter, 0);
                 }
-                push @{ $Q{$h} //= do {$Hq->add($h, $h); []} }, $npos;
+                push @{
+                    $Q{$h} //= do {$Hq->add($h, $h); []}
+                    },
+                    $npos;
                 ++$nopen;
                 $MaxOpen = $nopen if $nopen > $MaxOpen;
             } ## end for my $to (@$dests)
@@ -1333,7 +1328,8 @@ PULL: while (!defined $found && $nopen) {
         'goals'  => \@Goal,
         'boxes'  => \@Baggage,
         'player' => $Game{'player'},
-    ) if $reason eq 'SOLVED';
+        )
+        if $reason eq 'SOLVED';
     my $doba = tv_interval($timer);
     $doba = 0.000001 if $doba < 0.000001;    # it divides below
     my $nseen = scalar(%Bseen) + $Fseen;     # taken before the teardown empties %Bseen
@@ -1395,3 +1391,71 @@ PULL: while (!defined $found && $nopen) {
     return ($reason, $path, $doba, $nseen);
 } ## end sub solve
 1;
+__END__
+
+=head1 NAME
+
+Games::Sokoban::Solver::FirstBack - a pull search from the solved level, with short push attempts towards what it offers
+
+=head1 SYNOPSIS
+
+    use Games::Sokoban::Solver::FirstBack ();
+
+    $Games::Sokoban::Solver::FirstBack::QUIET = 2;
+    my ($reason, $path, $seconds, $positions)
+        = Games::Sokoban::Solver::FirstBack::solve($label, $game_blob, 60);
+
+=head1 DESCRIPTION
+
+The boxes are pulled off the goals towards the cells they start on -- every
+pulled position is winnable by construction, so no deadlock test is needed on
+that side -- and each time the pulling finds a position nearer the start than
+any before, a short forward search pushes from the start towards that
+arrangement. The two searches meet on any position the pulling has seen. It
+is the one engine of the distribution with a single mode, C<FIRSTBACK>; in
+the Sokoban project it solved four levels nothing else had ever solved.
+
+This is Games::Sokoban::FirstBack 0.07 of the Sokoban project, its search
+untouched; the comments at the top of the source say what its campaigns
+found and how the file is built (two procedures carry everything).
+
+=head1 INTERFACE
+
+=head2 solve
+
+    my ($reason, $path, $seconds, $positions) = solve($label, $game_blob, $limit);
+
+The same shape as L<Games::Sokoban::Solver::Firstbet/solve>; a fourth
+argument (the mode a pool passes) is taken and ignored. C<$reason> is
+C<SOLVED>, C<TIMEOUT>, C<UNSOLVABLE> (the pull search ran dry), C<IGNORE> or
+C<MEMCAP>. The path is written again from its pushes before it is returned.
+
+=head2 Run control
+
+C<$QUIET>, C<$MAX_GB>, C<$RACE_FLAG> and C<$RACE_GID>, as in
+L<Games::Sokoban::Solver::Firstbet/Run control>.
+
+=head1 CAVEATS
+
+A pull search of a large level takes gigabytes of memory; the program runs at
+most one pull search at a time for that reason (L<Games::Sokoban::Solver::Portfolio>
+calls the mode's kind C<pull>). The path returned for a level may differ
+between a run that solved other levels before it and a run of the level alone.
+
+=head1 SEE ALSO
+
+L<Games::Sokoban::Solver>, L<Games::Sokoban::Solver::Firstbet>.
+
+=head1 AUTHOR
+
+Jiri Broz, E<lt>jiri.krobot.broz@gmail.comE<gt>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2026 by Jiri Broz
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.42.2 or,
+at your option, any later version of Perl 5 you may have available.
+
+=cut

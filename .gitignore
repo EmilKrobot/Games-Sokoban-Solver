@@ -4,6 +4,8 @@ Makefile
 Makefile.old
 MYMETA.*
 *.tar.gz
+*.tar
+Games-Sokoban-Solver-*/
 *.tdy
 *.ERR
 *.LOG
