@@ -25,6 +25,13 @@ my @modules = (
 
 use_ok($_) for @modules;
 
+# The BerkeleyDB branch is optional: its three modules load where the
+# BerkeleyDB module is installed, and are not asked for where it is not.
+if (eval { require BerkeleyDB; 1 }) {
+    use_ok($_) for 'Games::Sokoban::Solver::Berkeley', 'Games::Sokoban::Solver::Firstbet::Berk', 'Games::Sokoban::Solver::Optimal::Berk';
+}
+else { note('BerkeleyDB is not installed: the optional branch is not loaded') }
+
 my $main = $INC{'Games/Sokoban/Solver.pm'};
 ok(defined $main, 'Games::Sokoban::Solver was loaded from a file');
 (my $root = $main) =~ s{[\\/]Games[\\/]Sokoban[\\/]Solver\.pm\z}{};

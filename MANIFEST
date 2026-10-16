@@ -1,6 +1,7 @@
 Changes
 INSTALL
 lib/Games/Sokoban/Solver.pm
+lib/Games/Sokoban/Solver/Berkeley.pm
 lib/Games/Sokoban/Solver/Code.pm
 lib/Games/Sokoban/Solver/Console.pm
 lib/Games/Sokoban/Solver/Data.pm
@@ -17,11 +18,14 @@ lib/Games/Sokoban/Solver/Festival/Analysis.pm
 lib/Games/Sokoban/Solver/Finder.pm
 lib/Games/Sokoban/Solver/FirstBack.pm
 lib/Games/Sokoban/Solver/Firstbet.pm
+lib/Games/Sokoban/Solver/Firstbet/Berk.pm
+lib/Games/Sokoban/Solver/Firstbet/Berk.pod
 lib/Games/Sokoban/Solver/Heap.pm
 lib/Games/Sokoban/Solver/Level.pm
 lib/Games/Sokoban/Solver/Memory.pm
 lib/Games/Sokoban/Solver/Munkres.pm
 lib/Games/Sokoban/Solver/Optimal.pm
+lib/Games/Sokoban/Solver/Optimal/Berk.pm
 lib/Games/Sokoban/Solver/Parser.pm
 lib/Games/Sokoban/Solver/Path.pm
 lib/Games/Sokoban/Solver/Replay.pm
@@ -41,5 +45,6 @@ t/08-festival-analysis.t
 t/09-fest-analysis.t
 t/10-engines.t
 t/11-optimal.t
+t/18-berkeley.t
 t/data/micro.xsb
 t/lib/BruteForce.pm

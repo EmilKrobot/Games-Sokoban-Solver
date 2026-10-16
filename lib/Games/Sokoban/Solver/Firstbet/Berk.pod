@@ -1,0 +1,741 @@
+=head1 NAME
+
+Games::Sokoban::Solver::Firstbet::Berk - out-of-memory-safe twin of the Firstbet
+first-solution solver
+
+=head1 SYNOPSIS
+
+    use Games::Sokoban::Solver::Firstbet::Berk ();
+
+    $Games::Sokoban::Solver::Firstbet::Berk::QUIET  = 1;     # mute the progress ticks
+    $Games::Sokoban::Solver::Firstbet::Berk::MAX_GB = 40;    # abort instead of exhausting RAM
+
+    my ($reason, $path, $doba, $nseen)
+        = Games::Sokoban::Solver::Firstbet::Berk::solve($gameid, $blob, $limit, 'PUSH_SCORE');
+
+=head1 DESCRIPTION
+
+This module runs the same search as C<Games::Sokoban::Solver::Firstbet> and keeps its
+state somewhere else. Where the baseline holds the deadlock cache, the move
+cache and the whole seen-set in Perl hashes, this twin holds them in a private
+on-disk database, so a game can be searched far past the point where the
+baseline would exhaust memory. Nothing about the heuristic, the move generator
+or the deadlock battery differs; the two are expected to return the same answer
+on every game and in every mode, and a gate exists to say so (L</GATES>).
+
+Use the baseline whenever it fits in memory. Reach for this one when it does
+not: the database costs disk traffic on every position, which on a small game is
+pure overhead and on a large one is the difference between an answer and none.
+
+The module never touches the game database. The caller reads the parsed level
+blob, passes it to C<solve> as an argument, and owns both the connection and any
+persistence of the result.
+
+It is built from the promoted baseline by a strip that resolves every
+experimental switch to the value the baseline ships with and removes the
+measuring apparatus entirely, so there is exactly one path through the code.
+Experiments belong in C<Games::Sokoban::Solver::Firstbet01>, never here.
+
+=head2 What solve() returns
+
+C<solve($gameid, $blob, $limit, $mode)> returns four values. C<$limit> is
+seconds; C<0> means no time limit at all - the search then ends only on
+C<SOLVED>, C<MEMCAP>, C<IGNORE> or a mode's own C<GIVEUP>/C<NOCP>. That is
+the setting for an open-ended run of one mode on one game through
+F<app/first/berk_one.pl> (USER 2026-09-07), where the disk-backed stores are
+what makes a run of hours possible; a race never uses it.
+
+=over 4
+
+=item C<$reason>
+
+C<SOLVED>; C<TIMEOUT>; or C<UNSOLVABLE>, which claims the state space was
+exhausted and is inadmissible if false.
+
+Two modes add their own. C<GIVEUP> means a restricted mode ran out of its own
+search tree - not the full state space, which is why it must not read as
+C<UNSOLVABLE>. C<NOCP> means the conveyor mode found no forced conveyor in this
+game, so it is inapplicable: it never searched and abandoned nothing, which is
+why it must not read as C<GIVEUP> either. Under the race driver a run can also
+end as C<MEMCAP> (memory ceiling) or C<IGNORE> (another mode won this game
+first); both are treated as timeouts.
+
+=item C<$path>
+
+The move string, or undef.
+
+=item C<$doba>
+
+Seconds elapsed, floored at a small positive value: the high-resolution timer on
+this platform can report a negative interval after a clock step, and a negative
+duration would poison both the rate arithmetic and the stored result.
+
+=item C<$nseen>
+
+Search effort - positions seen for the forward modes, configurations generated
+for the backward one, positions visited for the ladder mode. Callers log it.
+
+=back
+
+=head1 THE MODE PORTFOLIO
+
+The mode argument selects which precomputed table the scorer reads and, for four
+of the ten, an entirely different search. Lower is better in every scorer.
+
+=head2 The two closeness scorers
+
+C<PUSH_SCORE> (the default) and C<MOVE_SCORE> share one body and differ only in
+the table under it: push distance for the first, walk-plus-push distance for the
+second, both squared onto a fixed scale so that the last stretch to a goal counts
+for more than the first.
+
+The interesting part is not the distance but the gate in front of it. Goals are
+ranked into a fill ladder by the parser, and a box only earns its closeness
+reward for a goal whose rung is currently open; a park cell used for staging
+counts as a goal here, because parking a box there is exactly what frees a
+sibling's push stance. On top of that sits one flat same-scale nudge, inlined
+because a subroutine call per candidate is not free: moving along a precomputed
+optimal route. Until 3.3 there were three - vacating an articulation cell and
+moving along the forced common path stood beside it - but an ablation measured
+both inert (zero solve flips over a hundred-odd paired searches each) while the
+route nudge alone carried a game, so only the route nudge survived.
+
+=head2 The assignment scorer
+
+C<PUSH_ASSIGN> asks a different question: not "is this box near some goal" but
+"can the boxes as a set be matched to the goals cheaply". It solves the minimum
+cost one-to-one assignment of the boxes not yet placed to the goals still free,
+over raw push distances with unreachable pairs given a sentinel cost, and the
+minimum itself is the score. That fixes the flaw every additive heuristic has -
+a sum is smallest when everything piles onto one goal, which is a place no
+solution ever goes.
+
+=head2 The coarse and the route scorers
+
+C<MOVE_SUM> is the additive total-distance heuristic, kept deliberately coarse
+and deliberately free of every bonus the others carry.
+
+C<ROUTE> ignores distance and rewards membership: a push that lies on some
+starting box's optimal route, or on the forced common path, scores better. It is
+only a handful of discrete levels, so it ranks nothing inside a level.
+
+C<FLOW> makes route membership dominant and adds a coarsely bucketed distance
+underneath as a gentle gradient. It exists for boards whose solution has to
+route boxes I<through> goals they must not stop on, where a large reward for
+standing on a goal turns every vacating move into a ridge the search will not
+climb.
+
+=head2 The restricted searches
+
+C<CONVEYOR> applies only to games with a forced shared route: a chain of pushes
+that any solution must use. It rides a box down the rest of that chain and
+delivers it from the far end to the deepest open goal, as one offered step.
+
+C<ORDER> searches the sum of the per-box move spaces instead of their product.
+It fills goals in ladder order using single-box commit macros, with single-push
+nudges to unlock what a commit blocked. It cracks wide box fields and separated
+goal chambers where the forward portfolio drowns, and it is the one mode that
+cannot be spilled to disk (see L</The ladder mode is the exception>).
+
+C<BACKWARD> starts from the solved position and pulls boxes off the goals,
+looking for the starting layout, over a pull graph built once per game by
+transposing the push graph. Its guidance, since baseline 3.6 (2026-10-04), sets
+every box that is off a starting cell against every starting cell that is free
+and adds up the pulls between the two, read from a table of one walk over the
+push graph per starting cell; smaller is nearer the start. Until 3.5 it was the
+summed distance on foot of every box to the nearest starting cell. The new
+score is a different search rather than a better version of the old one: it
+solved games nothing had solved, and it does not find some games the old score
+found within a minute - the account is in the baseline, at C<build_pull_to>.
+Every pull is legal by construction, so this search has no deadlock battery at
+all.
+
+=head2 The feature mode
+
+C<FEATURE> files a position by four counts - how far the packing plan has been
+advanced, how many islands the free floor falls into, how many groups the
+rooms fall into once every box-blocked doorway is shut, and how many boxes
+stand where a journey still to come needs to pass. Each distinct combination
+of the four is a bin with its own queue, and expansion goes round the bins so
+that a coordinate reached a moment ago is served on the next turn of the
+wheel.
+
+Inside a bin the ordering is a count of unadvised moves: several criteria each
+name one child, and a child somebody named is free while the rest cost one. Each
+criterion picks, among the candidates that strictly improve its own count, the
+best by the full ordering of all four - not by its own criterion alone - and no
+criterion may name a move that undoes packing progress. All of them rank
+equally: the question asked of a child is only whether anyone pointed at it.
+
+Until 3.4 the mode carried no distance term of any kind; since 3.4 the
+closeness score runs beside the counts as ADVICE, never as the primary order.
+It enters twice, both under the same no-packing-regress veto: a sixth
+criterion names the child with the best score - by its own metric, since a
+score has no count to improve - and below the integer move count a bounded
+monotone fraction of the score breaks the ties inside a bin that used to fall
+to queue arrival order. Measured on paired halves before promotion: nine
+solve flips gained against none lost, a third fewer positions to the same
+outcomes, at about fifteen percent more cost per position - and two levels of
+the Classic Collection solved for the first time by anything.
+
+The room count deserves its own note, because it is not island counting by
+another name. A box in a doorway cuts the board in two; a box in the middle of a
+hall does not, however many islands a flood then reports. Doorways are the
+articulation cells of the walk graph, found once per game by a depth-first scan
+that keeps, for each cell, the earliest cell its subtree can climb back to.
+Adjacent doorways are one door and not several: a corridor is a whole chain of
+articulation cells, and taken one at a time each would see only other doorways
+as neighbours, so the rooms at the two ends would never be joined.
+
+=head1 THE MOVE GENERATOR
+
+Every search in the module runs through one move generator, and it is the hot
+core. For a position it floods the region the player can reach, and for every
+box on the rim of that region offers every push whose stance is inside it.
+
+Two things about it are worth knowing before changing anything.
+
+The child box set is not allocated per candidate. The parent's set is reused by
+mutation - lift the moving box off, drop the target in, put it back afterwards -
+and a bit vector of the same set is maintained in lockstep beside it, because the
+pattern-based deadlock test is a single string AND per pattern against that
+vector and is about twice the speed of the equivalent hash loop. Under the
+feature set this file enables, string bitwise operators must be written dotted.
+
+And a position expanded in an earlier run of the same game already knows which
+of its children survived. Candidate enumeration, stance reachability, the whole
+deadlock battery and the matching test are all deterministic for a given
+position, so the cached list is taken as read and only re-scored with the
+current mode. Within one run this never fires - a position expands at most once
+- but a retry or a later campaign wave starts warm.
+
+=head2 Position classes
+
+A position is keyed by its box layout plus the smallest cell of the region the
+player can reach, not by the player's own cell. One key therefore names the whole
+class "same boxes, player anywhere in here", which is what the player's freedom
+actually means. The flood that finds the representative is the same one the
+generator already performs, and the mapping from raw key to class key is memoized
+so a repeated birth of the same raw position costs one hash lookup.
+
+On top of that, a candidate whose class is already alive has paid for the whole
+battery, the matching test, its score and its macros at its first birth, and the
+search loop would drop it as seen anyway - so it is dropped at the candidate
+loop instead, before any of that work. What is given up is deliberate and small:
+a repeat birth arrives by some push direction, and the pattern tests are indexed
+by the move, so under a second direction's index they could occasionally kill a
+layout the first direction's index missed. That is weaker pruning, never a dead
+position mistaken for a live one.
+
+=head1 THE DEADLOCK BATTERY
+
+A push is refused before it becomes a position when any of the following says the
+result can never be solved. All of them are sound: they may miss a dead position,
+they may not condemn a live one.
+
+=over 4
+
+=item Patterns
+
+Simultaneous-occupation shapes precomputed per game, tested as bit vectors on
+the hot path and as an early-exit array loop for the cold callers.
+
+=item Walls, corridors and holes
+
+Over-capacity of a wall segment; the corridor and dead-end tests; and the hole
+test, a straight wall-closed segment that can only be filled from the back.
+
+=item Frozen clusters
+
+Boxes that had no legal push at all. They may unfreeze each other's neighbours
+as the player's reachable area changes with them treated as walls, so the check
+iterates to a fixed point. Its last flood is reused directly by the goal-corral
+test that follows, which is the single largest saving in the module: the painter
+is the hottest cost here and the corral fires on a large fraction of positions.
+
+=item Matching feasibility
+
+The boxes must be assignable one to one to goals they can still reach. Optimistic
+single-box reachability over the full boxes-by-goals matrix means a perfect
+matching is a I<necessary> condition for solvability, so its absence proves the
+position dead. Two cheap gates come first: if no box stands on a cell that
+reaches only some of the goals, every box reaches every goal and there is nothing
+to ask; and if the goals reachable by all boxes together number fewer than the
+boxes, no matching can exist and the assignment need not be run.
+
+=item Matching on the degenerated board
+
+The same question asked again, on a board where boxes that have frozen into
+place have been promoted to walls. The reachable-goal sets of the plain test are
+built once per game and therefore never tighten however stuck the position gets;
+this one rebuilds the edge set against the walls the position has actually grown.
+It is sound because it intersects two over-approximations. The wall-growing rule
+that feeds it seals pockets whose four orthogonal neighbours are occupied, and it
+is deliberately not order-free: walls go down as the scan proceeds and both the
+test and the wallification read the board being mutated, so the scan order is
+part of the definition.
+
+=back
+
+When a position is finally proved dead, the verdict cascades. Its cached move
+list names children that are now unreachable through it, and its parent may have
+just lost its last surviving child and become dead in turn.
+
+=head1 MACROS
+
+Some moves are only worth making as a whole sequence, and the generator can offer
+one as a single step. The protocol is carried in the score attached to each
+offered child, in three forms:
+
+=over 4
+
+=item a number
+
+An ordinary child: queued, its parent is the expanded position.
+
+=item undef
+
+A chain intermediate: linked into the parent chain so the path can be rebuilt
+later, but never queued. Only a chain whose continuation is forced may use this
+form. Since membership of the parent chain I<is> the seen-set, an intermediate
+marked seen and never expanded would lose every continuation other than the rest
+of that chain - which the search then reports as an exhausted state space, that
+is, as "no solution exists", on a game that has one.
+
+=item a number in brackets
+
+Queue this child I<and> stay the parent of the following chain steps. The entry
+stays an independently expandable position while the rest of the sequence
+descends from it.
+
+=back
+
+Three macros use it. The dead-end fill offers the deepest-first filling of a hole
+or a one-sided corridor, where a box on the entry can only ever go deeper. The
+route delivery offers a box's whole precomputed journey to an open goal as one
+chain, with an early exit if the delivered endpoint is already known - that
+dedup is the difference between the macro paying and merely costing. The conveyor
+delivery rides a box down the rest of the forced chain and then delivers it from
+the endpoint.
+
+Every macro re-checks each step against the real board. A stored path carries the
+optimism of the model it was computed in, and a refused step simply ends the
+chain: what was queued stands, the rest is forfeited, and partial chains are
+ordinary positions.
+
+=head2 A link is one push, and that is checked
+
+The path is rebuilt from the parent links alone, so a child hung on a position it
+is not one push from is a solution that does not replay. Until 3.7 the protocol
+above was trusted to prevent that, and it did not: the conveyor delivery marked
+every step with the bracket form, its last included, so its thread was never
+closed, and when one position had two boxes on edges of the conveyor the first
+step of the second ride was hung on the last step of the first - two pushes away.
+The path builder read only the first vanished and the first new cell of such a
+link; when those happened to be a legal push it wrote a path with a push missing
+(game 5469, ROUTE: SOLVED, and the path fails at step 500), and otherwise it died
+on an undefined key (five more games in a sample of 1 074). It takes the corral
+restriction to show: only a box whose ordinary push the corral withheld is new
+when its ride arrives.
+
+Four things hold the rule now. A thread ends at a plain number and nowhere else,
+and the ride is closed where it is appended. A chain that loses a step to the
+deadlock cache drops the new steps that hung on it, until it ends or passes
+through a position already known, from which it goes on. A step hung on another
+step is compared with it box by box - one box moved, along an edge of the push
+graph - or the solve dies and names the two positions. And the path builder counts
+both ends of every link and asks the push graph before anything else.
+
+Beyond those, the engine replays what it returns: at each of its four endings the
+finished string is played on the level from the start position, by the same rules
+the database applies when a solution is stored, and a path that fails is a death
+naming the step, never a result. That check does not depend on the reasoning
+above, nor on any macro, link or stored tail being right.
+
+In this twin the deadlock cache persists between runs, so a chain step that is
+already known dead is met far more often than in the baseline; the rule about a
+chain losing a step is the one that matters most here.
+
+=head1 STORAGE
+
+Storage is the whole reason this module exists, so it is worth stating exactly.
+
+Every place the search touches persistent state goes through one of a dozen
+accessor subroutines. Nothing else in the file names a store directly. That is
+not tidiness: an overlooked direct access does not fail, it succeeds against a
+Perl hash that nobody else reads, and the search then walks a different tree in
+silence. The seam is what makes such a mistake findable.
+
+=head2 The environments
+
+A forward search opens one private environment per game, holding three tables.
+
+=over 4
+
+=item Bad
+
+Positions proved dead. The geometry of a game never changes between attempts, so
+a position proved dead is dead permanently, and this is the one table with value
+across runs: it survives a timeout so that a retry skips branches the previous
+attempt already refuted, and it is removed wholesale once the game is solved.
+
+=item Tahy
+
+The move cache described above - the surviving children of every position already
+expanded. Consumed across runs like Bad.
+
+C<tahy_get> hands back a fresh array reference. Never modify it in place; write
+changes back through C<tahy_set>.
+
+=item Positions
+
+The seen-set and the path chain in one record: the value is the parent, the
+existence of the record is the answer to "seen before". Trajectory scratch of the
+current run, dropped when the search ends.
+
+=back
+
+The backward search uses a separate scratch environment for its one store, the
+seen map: since baseline 3.5 (2026-09-05) a configuration's value there is the
+push that undoes its pull followed by the parent's key, so the node table that
+used to sit beside the map is gone. The environment has no cross-run value and
+is always removed.
+
+Only the frontier - the buckets by estimated distance to the start - stays in
+memory, as the heap did before 3.5.
+
+=head2 The pool, the pages, and the end of a run
+
+Three facts about the tables were wrong for as long as this module existed and
+were put right on 2026-10-06, after the first long run of several games in one
+process (campaign berk-4: six backward searches, 1200 seconds) searched at a
+third of a core each and then sat for more than eight minutes after its limit
+without returning a single result. None of them is in this file - they live in
+C<Games::Berkeley>, which this module calls - but they decide how it behaves.
+
+B<The memory pool was not the size that was asked for.> The size is handed to the
+database library in bytes, and the Perl binding keeps it in a 32-bit integer and
+passes it on only when that integer is not zero. Four, eight, twelve and sixteen
+gigabytes therefore arrived as nothing at all, and the library ran on its own
+pool of about a quarter of a megabyte: every touch of a table was a read or a
+write of a page through the operating system's file cache. All the long runs
+before that date used eight gigabytes, so all of them ran without a pool; the
+flat few hundred megabytes they were measured at was not a ceiling being
+respected but a pool that was not there. The size now goes in through a
+one-line configuration file in the environment's directory, which takes
+gigabytes and bytes apart, and any size is honoured. It is a ceiling: a page
+takes memory when it is first touched. Zero still means no pool.
+
+B<A table was a sixth full.> A hash table splits a bucket
+when its page holds more than a set number of records, and that number was 64
+on pages of 16 kilobytes while a record of the backward search is about 40
+bytes: a page was a sixth full, 750 bytes of file per position (2 400 per record
+for the move cache, on pages of 32 kilobytes). Each table is now opened at its
+first touch - the first moment the length of a position is known - on pages of
+4 kilobytes, with the number of records per page computed from the record's
+length by the library's own formula. That gives 70 to 100 bytes per position,
+so a pool or the file cache covers ten times as many positions, and six games
+at once no longer outgrow the machine.
+
+B<A full pool of large pages was slow to close.> In a private environment every
+page in the pool is a separate block of memory, freed one at a time when the
+environment closes. With pages of 16 kilobytes a pool that had been full took
+0.9, 2.3 and 9.1 seconds to close at a quarter, a half and one gigabyte in a
+single thread - 2.6 times for the first doubling, 4 times for the second - and six threads closing two gigabytes
+each were what kept berk-4 at one core after its limit. With pages of 4 or 8
+kilobytes the same close takes a tenth of a second at any size, six threads at
+once included. Why the larger block is slow was not established; the
+measurement was, and the page size follows from it.
+
+Measured after the three: six backward searches in one process for 480 seconds
+made 23 to 29 thousand positions a second each, without falling off, into one
+gigabyte of table per game, and every result arrived within eleven seconds of
+the limit.
+
+A table file that already exists keeps the layout it was created with, so a
+deadlock cache or a move cache kept from before that date stays as sparse as it
+was until its game is solved and the directory goes.
+
+Every accessor now dies on a database error. They used to read "not zero" as
+"not found" and to ignore the result of a write, so a full disk would have left
+a search running on a table that kept nothing - each position new again, the
+same ones generated without end, and an ordinary timeout with an inflated count
+at the end of it.
+
+=head2 The ladder mode is the exception
+
+One mode opens no environment at all. It is a recursive descent, and a Perl call
+stack cannot be written to disk, so its state stays in memory and every accessor
+dispatches on which kind of search is running.
+
+Its three hashes are emptied at the start of EVERY search, not only of its own
+(2026-10-06). Until then the parent chain was emptied nowhere in this module -
+the rule that builds it removes the baseline's two clearing lines on the
+understanding that the seam clears instead, and the seam cleared the other two
+hashes only. So the chain of one ladder search stayed allocated through every
+later mode of the process, and a second ladder search in the same interpreter -
+a driver whose workers solve game after game - began with the parents of the
+previous board, whose cells carry the same numbers.
+
+Dispatching only some of them was measured on 2026-08-18 and the result is the
+reason this section exists. The node drop inside the deadlock cascade went to a
+table that had never been opened; it did not raise an error, the node simply
+stayed alive in memory, and the mode quietly stopped solving a game it solves in
+three hundredths of a second. It had agreed with the baseline exactly up to that
+point. Every accessor dispatches now.
+
+=head2 Counting what has been seen
+
+The count of positions seen is maintained inside the seam, by the two
+subroutines that are the only writers there are. Asking the table itself is an
+exact traversal of every record, and the forward loop asks once per popped
+position, which turns a constant into a quadratic. The two are compared against
+each other once at the end of every forward search: if they ever disagree, some
+writer exists that the seam does not know about, and every position count this
+module has ever reported is then suspect.
+
+=head1 RUN CONTROL
+
+These are the only variables a caller is meant to set. Everything else in the
+file is lexical to it: nothing outside can reach it, and nothing inside needs a
+package name for it.
+
+=over 4
+
+=item $CACHE
+
+Memory ceiling of one game's database, in bytes - the knob that decides how much
+of the search stays resident before it goes to disk. Honoured at any size since
+2026-10-06 (see "The pool, the pages, and the end of a run"); a page takes
+memory when it is first touched, so a ceiling above what the tables need costs
+nothing. 0 asks for no pool at all.
+
+=item $MAX_GB
+
+Memory ceiling for the process, in GiB; 0 disables it. When the sampled usage
+exceeds it the search stops and reports C<MEMCAP>. Set it on any unattended run:
+without it, a search that grows without bound takes the machine down rather than
+itself.
+
+=item $STORE_PER_MODE
+
+Whose the forward stores are (2026-09-09). At its default 0 they are the GAME's,
+C<< <berk_root>/FirstbetBerk/GE<lt>idE<gt> >>, and the modes of a sequential run inherit
+each other's C<bad.brk> and C<tahy.brk> - both are facts about the game, a
+deadlock being a deadlock and a position's children not depending on who scores
+them, so a mode that times out leaves the next one warm. Set it to 1 and every
+mode gets C<< GE<lt>idE<gt>_E<lt>MODEE<gt> >> instead, which is what lets several modes of ONE
+game run at once: no two workers touch a file, and no worker deletes a directory
+another is still searching in. The price is that each mode starts cold, and the
+two layouts are separate bodies of knowledge that nothing merges yet. Set it
+before the pool is spawned; F<berk_one.pl> does, whenever C<--jobs> is above 1.
+
+=item $QUIET
+
+How much a solve prints, in three levels, as in every engine that has it. 0
+prints everything. 1 mutes the live progress line and keeps the durable ones --
+the coloured end-of-search line and the CONVEYOR mode's NOCP line; parallel
+workers sharing one error stream set it, or their progress interleaves into
+noise. 2 mutes those durable lines as well, for a caller that prints its own
+summary.
+
+=item $RACE_FLAG, $RACE_GID
+
+Cooperative cancellation for a winner-takes-all driver. Threads cannot be killed
+from outside, so instead each search polls this pair at its throttled checkpoint
+and gives up with C<IGNORE> once another mode has won the game.
+
+=back
+
+There is deliberately no position budget here. Budgets are measuring instruments
+and live in the experiment slot; a production engine finds a solution or ends on
+a timeout, in every mode. What has to be right in this module is the placement of
+the time watchdogs, so that no mode can step over one.
+
+=head1 GATES
+
+C<ai/eq_berk_new.pl> compares this module against the baseline: same games,
+same modes, same limit, fixed hash seed.
+
+Only rows that solve on both sides carry a verdict, and that is the only honest
+comparison available. This twin goes to disk, so on a row that ran out of clock
+the two sides did different amounts of work and their position counts cannot be
+told apart from their speeds. A row that solves ran the same deterministic search
+to the same end whatever it cost, so its reason, path length and position count
+must agree exactly.
+
+The gate takes a lock. Two copies driving one game's directory is not a slow
+measurement but a destructive one: clearing a stale cache means deleting a
+directory recursively, and on this platform the other process still holds those
+files open and mapped. Run it in one foreground process.
+
+=head1 HISTORY
+
+The lineage below is the baseline's, since this module mirrors it. Versions are
+bumped only at a promotion.
+
+=over 4
+
+=item 2.3
+
+The ladder mode, lifted out of the experiment slot.
+
+=item 2.4 to 2.6
+
+Three throughput passes, together about thirty-seven per cent, each gated to be
+byte-identical in result. Cell-keyed maps became cell-indexed arrays; the
+painters test "already visited" before "is a box", because in a breadth-first
+flood the former is far the commoner answer; boxes are marked in the painter's
+own array rather than a second one, which collapses its busiest test to a single
+compare; and the goal-corral check stopped repainting what the frozen-cluster
+check had just painted. That last one is a single line and was the largest win of
+the campaign.
+
+=item 2.7
+
+The matching feasibility test.
+
+=item 2.8
+
+The separate seen-set was eliminated. It had been maintained in lockstep with the
+parent chain and its value was never read, so membership of the chain became the
+seen-set - worth tens of megabytes on a large search, and the reason the undef
+chain form above is dangerous.
+
+=item 2.9
+
+The route-dominant scorer, the conveyor mode, and the route-delivery macro.
+
+=item 2.10
+
+The pattern test as bit vectors.
+
+=item 2.11
+
+The conveyor package: on conveyor games the flat bonus becomes half the score
+range rather than a nudge, and the ride-and-deliver hook is offered to every
+forward scorer. The coarse additive scorer is excluded from the package
+entirely - each lever independently broke a game it solves, while the conveyor
+wins are covered by other modes anyway, and portfolio diversity is worth more
+than one more win in a mode that already has company.
+
+=item 2.12
+
+The move cache across runs.
+
+=item 2.13
+
+Board degeneration: the matching test on the wallified board, plus the rule that
+grows those walls.
+
+=item 2.14
+
+Position classes and the known-class skip.
+
+=item 2.15
+
+The feature mode.
+
+=item 2.16
+
+The conveyor threshold fix. The mode had been reporting "no conveyor" on more
+than half the database because the count it required could not be reached
+whenever a box already stood on the goal it was counting for.
+
+=item 3.0
+
+The baseline became a clean production module in its own right: the separate
+working copy was abolished, every experiment knob and every trace moved to the
+slot beside it, and the one- and two-line wrappers on the hot path were inlined
+at their call sites. Nothing here changed behaviour, which is why this twin was
+not rebuilt for it at the time - the cleanups reached it at the next rebuild,
+this one.
+
+=item 3.1
+
+The PI-corral restriction on the forward move generator, behind C<$CORRAL>.
+With an area the player cannot reach whose boundary boxes can only be pushed
+inward, and every such push available to him at that instant, the search may
+legally generate those pushes and nothing else. It is a proof rather than a
+heuristic, and it cuts the move list from six or nine candidates to about two on
+between a third and a half of a solution's positions. The switch went on
+2026-09-09 and the restriction is now unconditional: the off arm had not been
+run since the day it was measured, and a single game in the database owed its
+solution to it.
+
+=item 3.2
+
+The baseline hands its big containers back to Perl's pool at the end of every
+solve, so a batch process stops carrying dead seen-sets between games. THIS
+TWIN DOES NOT CARRY IT, and that is a decision, not an omission: the containers
+here live in BerkeleyDB, not in Perl's pool, so an C<undef> over the RAM names
+would free nothing and would reach into stores the seam owns.
+
+=item 3.3
+
+The score-bonus removal. Of the three flat nudges in the closeness scorer, an
+ablation (both arms the experiment slot, one knob off at a time, a position
+budget so a racing campaign could not skew it) measured the articulation-cell
+nudge and the whole conveyor bonus set - the half-range override, the flat
+form under it, and the assignment scorer's small tie-break - as inert: zero
+solve flips across every pair drawn. All of them were deleted; the route nudge
+stayed, alone carrying one game the scorer otherwise loses. The conveyor
+package keeps its ride-and-deliver machinery untouched.
+
+=item 3.4
+
+The score as advice into the feature mode - the inverse of 3.3's question.
+The feature search loads the quadratized push tables after all and scores
+every queued child, but only to advise: a sixth naming criterion and the
+in-bin tie-break (see L</The feature mode>). The primary order stays the
+feature bins and the advisor weights.
+
+=item 3.5 and 3.6
+
+The pull search's one store, and its score by pulls to the free start cells (see
+L</The restricted searches>).
+
+=item 3.7
+
+Not a feature but a fault removed: a parent link is one push, checked where it is
+made and where the path is built, and every ending replays its finished path
+before it says SOLVED (see L</A link is one push, and that is checked>). The
+search is unchanged - positions are identical wherever the old and the new engine
+both solve, except that the descendants of a known-dead chain step are no longer
+queued.
+
+=back
+
+=head2 What the rebuild found
+
+Regenerating this twin from the 3.1 baseline turned up a fault that had been
+shipping since the seam was first written, and it is worth recording because
+nothing about it was visible from outside.
+
+C<Games::Berkeley::fb_pos_del> returns nothing. C<node_del> handed that result
+straight back as its own, so C<set_bad>'s cascade - which reads it, as
+C<if (my $father = node_del($pozice))>, to prune the father's move list and to
+kill the father when nothing is left of it - was ALWAYS FALSE on disk. The
+cascade stopped one level short on every single call. The search still returned
+the right path; it simply walked more positions to get there, because nodes the
+RAM baseline kills stayed alive. On one game in one mode that was 11 226
+positions against 11 542.
+
+The lesson is the seam's own: an accessor must keep the CONTRACT of the
+expression it replaced, not merely its effect. C<node_del> now reads the parent
+before deleting the record and returns it.
+
+=head1 CAVEATS
+
+The per-position maps added to the search in the last two versions - the memo of
+position classes and the records of the player's regions - are still held in
+memory. They bound how far this module can actually run before memory matters
+again, and how much has not been measured.
+
+=head1 SEE ALSO
+
+L<Games::Sokoban::Solver::Firstbet> - the baseline this twin mirrors.
+L<Games::Sokoban::Solver::Firstbet01> - the experiment slot, where changes are made.
+L<Games::Berkeley> - the database layer and the location of the environments.
+
+=cut

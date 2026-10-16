@@ -17,4 +17,10 @@ Revision history for Games-Sokoban-Solver
       band; what went was the storage: the database writes, the BerkeleyDB seam
       (the caches live in RAM for one solve), the SQL log and the statistics.
       $LastStatus names the stop, $ON_IMPROVED reports every improvement.
+    - The BerkeleyDB branch is optional: Games::Sokoban::Solver::Berkeley (the
+      stores), Firstbet::Berk and Optimal::Berk (the twins that keep the search
+      on disk) load only where the BerkeleyDB module is installed, under a root
+      directory the caller names; a second process on one store directory is
+      refused, and the optimal twin refuses a pool over 3 GB (the module keeps
+      the size in 32 bits).
     - Skeleton created with h2xs 1.23 (-AX --skip-exporter --use-new-tests).
