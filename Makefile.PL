@@ -18,7 +18,7 @@ WriteMakefile(
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.042000',
 
-    # EXE_FILES => ['bin/soko-solver.pl'] is added when the program exists (plan step 22).
+    EXE_FILES        => ['bin/soko-solver.pl'],
 
     PREREQ_PM => {
 

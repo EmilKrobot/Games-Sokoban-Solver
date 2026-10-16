@@ -1,3 +1,4 @@
+bin/soko-solver.pl
 Changes
 INSTALL
 lib/Games/Sokoban/Solver.pm
@@ -50,6 +51,8 @@ t/10-engines.t
 t/11-optimal.t
 t/12-portfolio.t
 t/13-race.t
+t/14-solver.t
+t/15-cli.t
 t/17-config.t
 t/18-berkeley.t
 t/data/micro.xsb

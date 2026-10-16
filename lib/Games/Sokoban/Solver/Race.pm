@@ -505,15 +505,18 @@ sub stop ($self, $label) {
     return;
 }
 
-=head2 threaded
+=head2 threaded, jobs
 
     my $on = $race->threaded;
+    my $n  = $race->jobs;
 
-Whether the started pool runs on threads (1) or in this interpreter (0).
+Whether the started pool runs on threads (1) or in this interpreter (0), and
+how many tasks it runs at once (1 in the serial backend).
 
 =cut
 
 sub threaded ($self) { return $self->{'threads'} ? 1 : 0 }
+sub jobs ($self)     { return $self->{'jobs'} }
 
 1;
 

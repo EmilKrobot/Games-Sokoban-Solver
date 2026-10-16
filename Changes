@@ -36,4 +36,23 @@ Revision history for Games-Sokoban-Solver
       to the BerkeleyDB twin of Firstbet under $BERK.  Config: the settings of
       soko-solver, their defaults, the ini file, and the questions of the
       first run.
+    - The facade Games::Sokoban::Solver and the program bin/soko-solver.pl:
+      read_levels, pool (one Race pool for a run, the Finder's blok_task as its
+      handler), prepare (Level, Code, the Parser with its patterns dealt out to
+      the pool in two passes under the budget, the two other analyses -- built
+      at once or on demand), first_solution (the race fed by kind under the
+      caps, a mode's own limit, the analyses built when the first mode that
+      needs them comes up), best_solution (Optimal or its twin, seeded by the
+      winner, interruptible through a stop hash), full_path (the forced
+      opening in front, the path written again from its pushes, replayed by
+      the second reading), solve_level. The program: the settings file and its
+      questions on the first run, the four output formats (path, sok, report,
+      json), one line per level on standard output and the account on standard
+      error, Ctrl+C once for the level in hand and twice for the program, exit
+      0 / 1 / 2 / 3. Gates: xt/eq_prepare.pl (prepare from the level's text
+      against the project's stored analyses, the pool's patterns against the
+      serial ones), xt/cli_roundtrip.pl (the program on levels of the
+      collection with threads and without, every path replayed on the level as
+      drawn, no proof below a stored one). The round trip found a level the
+      race had not solved reported SOLVED in the JSON: fixed before release.
     - Skeleton created with h2xs 1.23 (-AX --skip-exporter --use-new-tests).
