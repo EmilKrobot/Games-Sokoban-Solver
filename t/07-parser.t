@@ -127,6 +127,23 @@ my @required = qw(code w h ncell nbox player baggage goal vzp vzu cm cmk cg blok
     like($@, qr/hash reference/, 'parse wants the Code record, not a board');
 }
 
+# A goal no box can reach: refused, with the cell named. (The lower goal of
+# this corridor can be entered from the right only, where the wall is.)
+{
+    my $code = code_of(<<'XSB');
+#########
+#@      #
+# $ $   #
+####### #
+######  #
+######..#
+#########
+XSB
+    my $ok = eval { $parse->($code); 1 };
+    ok(!$ok, 'a level with a goal no box can reach is refused');
+    like($@, qr/\AREFUSED: no box can ever be pushed onto the goal at cell 51 \(row 5, column 6\)/, '... naming the goal');
+}
+
 # The fixture levels all parse, and every push of each lies in its walk graph.
 {
     open my $fh, '<', 't/data/micro.xsb' or die $!;

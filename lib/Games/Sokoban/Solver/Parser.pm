@@ -1315,6 +1315,20 @@ sub parse($code, %opt) {
     %Order = %{ $Game{'order'} };
     reverse_moves();
     route();
+
+    # A goal that no box can ever be pushed onto -- from no cell of the push
+    # graph, which is every cell a box can stand on -- makes the level one
+    # nobody can solve, and the engines were never written for that: they
+    # answer UNSOLVABLE after a search, or die on a table with no entry. The
+    # Sokoban project's collection has no such level (the Code stage reduced
+    # every level and its games were all meant to be solved); a level typed by
+    # a user may be one, so it is refused here with the cell named.
+    my %home = map { ($_, 1) } @Baggage;
+    for my $g (@Goal) {
+        next if $home{$g};
+        next if grep { exists $Game{'routes'}{$_}{$g} } keys %{ $Game{'routes'} };
+        Carp::croak("REFUSED: no box can ever be pushed onto the goal at cell $g (row " . int($g / $W) . ", column " . ($g % $W) . ')');
+    }
     podklady();
     common_path();
     to_goal();

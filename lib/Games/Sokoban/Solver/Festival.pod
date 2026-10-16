@@ -1,0 +1,947 @@
+=encoding utf8
+
+=head1 NAME
+
+Games::Sokoban::Festival - the Festival solver as a first-solution engine
+
+=head1 SYNOPSIS
+
+    use Games::Sokoban::Festival ();
+
+    my ($reason, $path, $doba, $nseen)
+        = Games::Sokoban::Festival::solve($gameid, $fest_blob, 90, 'FF_BASE');
+
+    my @modes = Games::Sokoban::Festival::modes();   # the eight strategies
+
+=head1 DESCRIPTION
+
+This is a Perl port of Yaron Shoham's Festival 3.1, run in this project as one
+of two first-solution engines beside C<Games::Sokoban::Firstbet>. It is not a
+wrapper: the C source was transcribed, then reworked over several waves until it
+was a Perl program rather than C written in Perl. The wrapper around the real
+executable is a different module, C<Games::Sokoban::FestivalEXE>.
+
+The file carries B<no comments>. That is deliberate, and this document is the
+other half of the decision: what a comment would have said about the design, the
+measurements and the traps is here, and the source is left to say what the code
+does. The line-by-line commentary the file used to carry is in git, at the last
+commit before the 0.05 promotion.
+
+=head2 What it is for
+
+To find A solution, not a short one. Length is the optimal solver's business
+(C<Games::Sokoban::Solver>). A game this engine solves is a game that stopped
+being unsolved, which is the only figure this project keeps score by.
+
+=head1 THE INTERFACE
+
+The whole outward surface is two subroutines and six package variables. Nothing
+else is reachable from outside, and that is checked at every promotion with
+C<perl ai/module_surface.pl lib/Games/Sokoban/Festival.pm --subs>.
+
+=head2 solve
+
+    ($reason, $path, $doba, $nseen) = solve($gameid, $blob, $limit, $mode)
+
+C<$blob> is the stored level analysis, C<game_blob.fest> (see L</WHAT IT TAKES
+IN>). C<$limit> is a budget in seconds. C<$mode> names one strategy, or the
+string C<FF_ALL> for the engine's own internal parade of all eight, or C<undef>
+which means the same as C<FF_ALL>.
+
+C<$reason> is one of:
+
+=over 4
+
+=item SOLVED
+
+C<$path> holds the solution as a LURD string, in the same code space as every
+path this project stores.
+
+=item TIMEOUT
+
+The budget ran out, or a strategy stopped without saying why. The second case
+needs explaining: C<FAILED> is meant for a strategy that B<gave up and said so>
+- C<Could not find packing order>, C<Perimeter not reached>, C<No imagined
+board> and the three C<No time ...> reasons (C<Max nodes reached> was one of
+them until 0.12 removed the tree's capacity fuses). The string C<Unknown reason>
+is not one of those; it is the
+initial value nothing overwrote, so nothing reported a failure at all, and a
+search that reports nothing has simply not found the solution in the time given.
+The clock alone cannot separate the two, because C<FF_ALL> divides the budget
+between eight strategies with C<int()> and loses a fraction on each, so a parade
+that used all of its time still finishes just under the limit - measured on a
+campaign at 89.3153 s and 89.9968 s of a 90 s budget.
+
+=item FAILED
+
+A strategy gave up early and C<$LastFail> holds its reason.
+
+=item IGNORE, MEMCAP
+
+The race contract; see L</RUNNING IT IN A RACE>.
+
+=back
+
+C<$doba> is the elapsed time and C<$nseen> the number of forward expansions.
+B<C<$nseen> is not comparable between two runs> under a clock budget: the
+backward half takes a third of the slice and burns whatever is left of it once
+it has its plan, so it is a reading of the machine and not of the engine.
+Measured on game 1, one engine run twice per mode: the path came out identical
+every time on all eight modes and C<$nseen> differed on six of them.
+
+C<solve> is B<database-free>. It takes the blob as an argument and returns its
+answer; the calling script owns the connection and the persistence, exactly as
+C<Games::Sokoban::Firstbet::solve> does.
+
+=head2 modes
+
+    my @modes = modes();
+
+The eight strategy names, in the engine's own order. This exists so that
+C<@FF_NAME> can stay a file-scope lexical instead of becoming a package
+variable: what leaves the module is a value, not a variable somebody outside
+could assign to. C<app/fest_all.pl> takes its portfolio from here, so adding a
+strategy does not mean editing a driver.
+
+=head2 Package variables
+
+=over 4
+
+=item $VERSION
+
+Bumped only at a promotion.
+
+=item $MAX_GB
+
+RAM ceiling in GiB. Over it a solve ends as C<MEMCAP>, which counts as a
+TIMEOUT-grade result. The figure is compared against B<total system RAM>, not
+against this process.
+
+=item $RACE_FLAG, $RACE_GID
+
+Set by C<Games::Sokoban::Race> so that a losing arm can be told to stop. The
+three search loops poll them at one site each (C<run_aborted>), and since
+2026-09-11 the flag is read B<once a second> rather than on the eight-second
+progress poll it used to share: a shared-hash read is cheap, and a mode that has
+already lost should not keep a core for another eight seconds. Measured on game
+16899: the winner solved at 4.66 s and all seven losers returned C<IGNORE>
+between 5.39 and 5.50 s. The memory ceiling stays on the progress interval --
+it is the expensive probe (4.3 us against 0.09 for the clock), and when the
+engine works correctly memory grows slowly, so the ceiling is a brake against a
+bug rather than a regulator.
+
+=item $LastFail
+
+The reason companion of a C<FAILED> return.
+
+=item $QUIET
+
+Mutes the PROGRESS line (2026-09-08, USER: a two-hour run of C<FF_BASE> or
+C<FF_GIRL> on one game should show that it is alive). With C<$QUIET> at its
+default 0 the engine overwrites one line on STDERR every eight seconds --
+at the same poll that watches the race flag and the memory ceiling, so the
+search pays nothing extra for it: mode, game, positions seen, nodes in the
+current tree, the phase (C<load>, C<pack> for the packing search that finds
+the plan, C<fwd> for the forward search that walks it), seconds, positions per
+second, perimeter entries. Under C<FF_ALL> the mode column names the strategy
+the parade is currently on, starred (C<*FF_GIRL>) as the result line stars the
+winner -- otherwise the line could not say where the clock was going.
+
+B<Every worker of a race shares that one terminal line>, and they all start
+within milliseconds of each other, so C<solve> offsets a worker's FIRST poll by
+its mode's own index (2026-09-09). The period is eight seconds and the
+portfolio has eight strategies, so the modes take the line one per second and
+each keeps its own cadence; without the offset only the last writer of each
+round was ever seen. The other half of that fault was not in this module at
+all. An interpreter's own STDERR is unbuffered -- perl opens it that way, not
+through C<$|>, which is 0 on it -- but C<< threads->create >> builds the child
+interpreter a NEW handle, and that one is an ordinary 8 KB buffered handle: a
+worker measured 8 192 bytes of 16 000 out after two seconds and the rest at
+thread end. The flush boundary falls in the MIDDLE of a line, so the terminal
+gets a blank line carrying the tail of another worker's. A driver that shows
+the progress line therefore sets C<< STDERR->autoflush(1) >> BEFORE it starts
+the pool, since only then do the clones inherit it (F<fest_one.pl>).
+
+Since 2026-09-28 (USER) C<$QUIET> has THREE levels, the same in every engine
+that has it: 0 prints everything; 1 mutes the PROGRESS line and keeps the
+result line (C<report_ending>, through C<barva>); 2 mutes the result line as
+well. A driver that races eight workers on one STDERR sets 1 (F<fest_batch.pl>,
+F<tandem_batch.pl>, F<tandem_matrix.pl>) and keeps one line per mode;
+F<fest_one.pl> leaves it at 0; a driver that prints its own line for the game
+sets 2 (F<Devel/ai/fest_duel.pl>, whose line pairs this engine with Fest).
+Nothing about the search changes, so C<$VERSION> was not bumped -- rows before
+and after it are the same engine.
+
+=item $BLOK_REPLACES
+
+Puts this project's own C<blok> table in place of the engine's move-level
+deadlock battery; see L</DEADLOCKS>.
+
+=back
+
+=head1 WHAT IT TAKES IN
+
+B<The engine does not analyse a level.> It used to, and since 2026-08-24 it does
+not: the analysis is a separate module, C<Games::Sokoban::Festival_Parser>,
+which runs offline and stores its result in C<game_blob.fest>. C<load_level>
+installs it and derives the few things that are cheaper to rebuild than to
+store - the whole-board masks, C<$Inv_epsilon>, the flat pattern offsets, and
+the two index lists the matching distances pair boxes against.
+
+B<It does not load that module either>, since 0.09. Everything the engine ever
+wanted from it was one line - uncompress, C<Storable::thaw>, and a check that
+the blob carries the stamp this code reads - so C<load_level> does that itself,
+against the constant C<FEST_STAMP>. The stamp now lives in two files, and that
+is the arrangement rather than a flaw in it: bump either side without the other
+and every blob is refused loudly, which is the failure this check exists for.
+Not compiling the parser's 8122 lines takes 4.7 MB off the start of a campaign
+process, and a threaded driver pays that per worker.
+
+B<The engine owns its analysis.> C<_install> and C<set_blok> take a
+C<Storable::dclone> of anything that is a reference instead of pointing into the
+thawed hash, and C<load_level> undefs that hash the moment the install is done -
+before the reachability flood, not on the way out of the sub. Aliasing saved one
+copy and cost more than it saved, because nothing of the analysis could be given
+back while a module variable still pointed into it. The clone costs 0.2 ms on
+game 1 and 50 ms on game 6869, the largest analysis in the database, once per
+solve.
+
+B<blok is installed only when it is used.> C<%Blok_sets> is read from exactly
+one place, C<blok_forbids>, which runs only under C<$BLOK_REPLACES>. With the
+substitution off, installing it anyway held 5.67 MB of game 6869's 6.20 MB
+analysis that nothing would ever read. Over six games in one process the three
+changes together took the peak from 157.5 MB to 131.1 MB.
+
+There is B<no fallback>. A missing or foreign blob is a hard stop in
+C<load_level>, and the assertions that survive on the load path all guard this
+contract: no stored analysis, one that does not unpack, a foreign stamp, a
+missing key, a blok table from before the 2026-08-06 migration. That last one
+matters most, because a non-migrated blob would silently skip the whole deadlock
+battery and look like a speed-up.
+
+C<app/fest_prep.pl> fills the column. It has to have run before any campaign.
+
+=head1 THE EIGHT STRATEGIES
+
+Each is a backward packing search taking a third of the budget, which produces a
+parking plan, followed by a forward search on the rest:
+
+    mode           backward       forward
+    FF_BASE        BASE           FORWARD_WITH_BASES
+    FF_MAXDIST2    MAX_DIST2      HF
+    FF_GIRL        GIRL           GIRL
+    FF_HF          HF             HF
+    FF_BICON       BICON          HF
+    FF_MAXDIST     MAX_DIST       HF
+    FF_REV         REV            REV
+    FF_DRAGONFLY   DRAGONFLY      NAIVE
+
+In the C original these run one after another inside one call, each taking
+C<1/(strategies left)> of the time still remaining. Here each is a MODE that can
+be given the whole budget on its own, which is what the campaign drivers do -
+C<FF_ALL> keeps the original parade for the cases that want it.
+
+The reason the modes exist as modes is measured: over campaigns C<fest-6> to
+C<fest-8>, of 75 games the parade solved, B<47 went to FF_BASE alone> and the
+other seven strategies earned 28 between them. A strategy given the whole clock
+is a different proposition from a strategy given an eighth of it.
+
+=head1 HOW THE SEARCH IS ARRANGED
+
+The search arena is a port of Festival's C<tree.cpp>, with four deliberate
+departures, each measured and kept:
+
+=over 4
+
+=item The C hash substitute is gone
+
+C<hash_array> was a hand-built table of C<4 * max_nodes> slots with linear
+probing and C<-1> for empty - a hash written by hand because C has none. Perl
+has the real thing, and C<node_of_hash> maps a position hash straight to a node
+index. Both are exact-match lookups on the same 64-bit key, so this is
+behaviour-identical, and it removed an allocation that dominated the module:
+169 MB at log 20, 1353 MB at log 23, now 0.3 MB either way.
+
+=item Nodes are struct-of-arrays
+
+One array per field with a shared item index, rather than one hashref per node.
+Measured 371 down to 107 bytes per node.
+
+=item Expansions are not
+
+They stayed arrayrefs of hashrefs on purpose: profiling showed their field
+access does not register - they are an eighth as numerous as nodes and never
+touched in an inner loop - while repacking them would turn every C<$e> into an
+index across every consumer.
+
+=item The helper comes from a template (0.07)
+
+C<$HELPER_TEMPLATE> is the one place that knows the helper's shape. C<_allocate>
+clones it once per process for the main helper - the clone carries the three
+plan containers (C<imagine>, C<oop>, C<request>), which in C were the pointers
+C<init_helper_extra_fields> filled. The throwaway helpers of the auxiliary
+searches (corral, rooms, wobblers, xy, k-dist and kin) still come from
+C<init_helper>, a literal WITHOUT those containers, for two reasons: the literal
+is 3.5x cheaper than a clone on that warm path, and their absence is what arms
+the C<missing oop> / C<imagine not allocated> tripwires - an auxiliary search
+that wanders into plan machinery must die, not run on an empty plan.
+C<reset_helper> clears per-strategy state and deliberately does not touch the
+three containers: the phases that use them re-initialise their own working
+areas, bounded by counters (arrays are recycled behind a count; the lookup
+hashes are rebuilt, because a counter cannot bound a hash).
+
+=back
+
+=head2 The tree has no capacity fuses
+
+C allocates each search tree once, as fixed arrays sized by C<23 + extra_mem>
+("about 1.5GB per core"), and C<tree_nearly_full> stops a search before any of
+them overflows. It has four fuses: expansions, nodes, move-hashes, and a boards
+region whose bytes are counted as C<(expansions + 1) * Height * Width>. Behind
+every one of those arrays lies memory that belongs to something else, so in C
+the fuses are not optional.
+
+This port allocates nothing up front - every array grows on demand - and it ran
+the fuses anyway, and at 20 instead of 23, B<eight times below C's default>:
+131 072 expansions, 1 048 576 nodes, 2 097 152 move-hashes, and the boards fuse
+against a region the port does not even have (it bound first on the 1 747 games
+whose rectangle exceeds 272 cells). A fuse ended the search with its budget in
+hand and said C<Max nodes reached>: game 24952 at 7200 s, C<FF_BASE> stopped at
+exactly 131 070 forward expansions after 3 630 s, C<FF_GIRL> after 4 366 s. And
+a fuse that fired in the B<packing> search left no trace at all - the forward
+search ran next, and the row ended as an ordinary TIMEOUT.
+
+B<Since 0.12 (2026-09-11) there are none.> C<tree_nearly_full> went with its
+two exits, the three C<confess> calls that restated the same caps
+(C<add_node_to_tree>, C<fill_expansion_structures>, C<expand_node>), and
+dragonfly's C<1 E<lt>E<lt> 22> node cap. In Perl a capacity cap can only end
+badly - it is either silent or it stops a legitimate search - and what bounds a
+solve here is the clock and C<$MAX_GB> (the USER: our own memory check is
+sufficient, and the limit, be it 20 or 23, is unnecessary).
+
+What the tree costs was measured the same day, in one process with nothing
+else in it, on game 34849 (a 9 x 9 board, 31 floor cells, 12 boxes, C<FF_HF>,
+packing search): B<40 to 47 KB of private memory per expansion>, steady from
+20 000 expansions on - 3.3 GB at 65 000, 5.8 GB at 128 000. Per tree NODE the
+figure is not stable: it rose from 8.7 to 14 KB as fewer new positions came
+out of each expansion. The old move-hash fuse would have stopped that search at
+about 62 000 expansions; it went past and on. So a long run is expensive, and
+C<$MAX_GB>, which watches the whole machine, stops every worker of a race at
+once rather than the one that grew. What an expansion holds that costs 40 KB,
+on a board of 81 bytes, is the open question.
+
+=head2 Positions
+
+Positions in the sub-searches (mini, deadlock, k-dist, xy, wobblers, corral) are
+a flat array where every expanded position keeps its full move list, per-move
+scores and hashes. Deadlock knowledge propagates bottom-up. C<find_hash_in_positions>
+is still a linear scan and that is deliberate: replacing it needs a map that
+outlives the call, and these sub-searches B<nest> - a corral proof runs a mini
+search - so a package-level map would break. It measures at 0.1 % of runtime.
+
+=head2 The pools are allocated once, and that is why there is no free_memory
+
+C<_allocate> returns at once when C<$Allocated> is set, so the tree, the
+deadlock cache, the perimeter table, the dragonfly nodes and the helper are
+built B<once per process> and every later game writes into the same containers.
+Until 0.19 C<reset_tree> zeroed the counters and emptied C<node_of_hash> only,
+and the pool arrays kept whatever the biggest search in that process needed.
+That is the C original's shape - allocate once, address by counter.
+
+B<Since 0.19 C<reset_tree> empties the tree's eight arrays as well.> A strategy
+is several searches one after another on the same tree - packing, then one or
+two forward searches - and the packing search is by far the largest: on game
+34849 (FF_HF, 600 s) it left 236 000 node slots behind, of which the last
+forward search used 24 000. The rest stayed for the whole run, and what the
+forward searches and the small searches allocated came on top. Emptying the
+arrays at the start of every search hands the finished search's records back,
+and the process does return them: its working set drops at the change of phase
+(361.6 to 330.3 MB on that game) and the peak of the run is the end of packing,
+362 MB, where it used to be the end of the run, 492. Paired against 0.18 under
+the same load (four games, 600 s, eight processes side by side) the positions
+searched were the same or a fraction of a percent more, the peak 4 to 10 %
+lower. C<ai/eq_fest_promote.pl> 168/0/0 in both C<--blok> arms, which also says
+that no search reads the tree of the one before it.
+
+The deadlock cache, the perimeter, the dragonfly nodes and the helper are still
+allocated once and kept.
+
+The teardown at the END of a solve is a different matter, and the measurement
+below still stands for it: what 0.19 frees is freed between the searches of one
+game, where the next search asks for blocks of the same shape.
+
+So the teardown C<Games::Sokoban::Firstbet> gained in 3.2 does not belong here,
+and this was measured rather than argued (2026-08-29, six games in one process,
+FF_BASE, 15 s each). Freeing the pools at the end of C<solve> took the process
+from B<130 MB to 214 MB> - 64 % worse - because every game then had to allocate
+its containers afresh, and levels differ in board length, so the blocks handed
+back do not fit what the next game asks for. Freeing only the level analysis
+came out at 130.8 MB against 130.4: measurably nothing, since C<_install>
+overwrites those containers on every solve anyway. The promotion gate was
+168/0/0 in both C<--blok> arms with the teardown in, so it was correct - just
+dearer.
+
+What that leaves is worth writing down, because it is the answer to "the process
+keeps growing during a campaign": it grows to the high-water mark of the largest
+level it has seen, Perl never hands that back to the operating system, and the
+only thing that returns it is the end of the process. The knob for that is
+C<-Pocet> in C<app/firstbet_loop.ps1>, not anything inside the engine.
+
+=head2 The perimeter entry is one integer, and the perimeter is not the memory
+
+The perimeter is the table of positions the packing search reached, which the
+forward search later tests its own positions against (C<perimeter.cpp>: one
+flat table per process, a 12-byte record of hash, depth, side and algorithm,
+C<log_perimeter_size> 25 for one core and one size step up per doubling of
+cores). The port transcribed the record field for field into an array
+C<[depth, side, alg]> behind a hash key, which in Perl costs 396 bytes per
+entry, and it keeps one table B<per worker thread> - so eight modes in a race
+hold eight tables where C holds one. Since 0.11 (2026-09-06) the value is the
+same three fields packed into one integer, C<depth E<lt>E<lt> 16 | side
+E<lt>E<lt> 8 | alg>, exactly the C layout: 70 bytes per entry, integer
+operations where there were array dereferences, and C<update_perimeter> takes
+the key and writes the slot itself (a signature parameter is a copy). The
+algorithm byte is masked, because a tree's C<search_mode> starts at -1.
+
+What that promotion is B<not> is the answer to "where does a Festival race put
+its memory". The hypothesis was that this table, 25 times the C record times
+eight copies, was the main consumer - the arithmetic allowed 6.4 GB per worker.
+Measured on game 34849, eight modes in one process, 600 s, baseline against the
+slot second by second: B<12 226 MB against 11 680 MB>, a saving of 4.5 %, with
+the two curves parallel the whole way. At a 5.7x cheaper record that means the
+whole perimeter held about 670 MB; the remaining ~1.4 GB per worker sits
+elsewhere, and finding where is a separate question, to be measured by removal
+(memory C<project_fest_perimeter_memory>). The change went in as what it is: a
+correct and cheaper representation, gated on the path itself
+(C<eq_fest_promote> 168/0/0 in both C<--blok> arms), not a memory fix.
+
+=head2 The memory is the search tree, and a move slot in it is three integers
+
+Where the rest sits was measured on 2026-09-11, part by part with
+C<Devel::Size> at the progress tick, and the sum of the parts came to within
+ten per cent of the process's private bytes, so nothing large hides elsewhere.
+It is the search tree, at 40 to 47 KB per expansion, and inside the tree it was
+the B<move slot>: every expansion keeps all its moves - 32 to 40 of them in a
+packing phase - and each move was a Perl hash of seven fields with a nested
+C<attr> hash of three (1 209 bytes), beside it the child's 64-bit hash (78
+bytes) and a dead flag (33). A move carries about 24 bits of information.
+
+The 78 bytes deserve their own sentence, because the trap is general: B<a number
+that has been used as a hash key keeps its string form>. Perl stringifies the
+number to look the key up and caches the string in the scalar, so an array of
+64-bit numbers costs 32 bytes an element until its values have served as keys,
+and 77 after (measured, 100 000 elements).
+
+Since 0.14 (2026-09-11) the slot is three integers. B<The child's node index is
+stored beside the move> (C<mh_node>): C<fill_expansion_structures> knows it the
+moment it finds or creates the child, and the seventeen places that used to turn
+the child's hash into a node through C<node_of_hash> - and the score reads that
+went through C<get_score_of_hash> - index it directly. The child's hash is gone
+from the slot; where it is really needed (the perimeter, C<expand_node>'s check)
+it comes from C<node_hash>. B<The move is one integer>: C<move_pack> puts from
+in bits 0-11, to in 12-23, the pusher's side in 24-25, kill, base, pull and
+reversible in 26-29 and the weight plus one in 30-31 (the tree's weights are
+-1, 0 and 1); C<move_unpack> gives the hash shape back to the code that reads
+moves, which is everything outside the tree, and the weight is written into the
+integer in place. The C<advisor> field went: its only reader was the line after
+its write. A slot went from 1 320 bytes to 99.
+
+Measured on game 34849, C<FF_HF>, 600 s, snapshots at the same points: the
+packing phase 814 MB -> 324 MB, the forward phase 1 944 MB -> 745 MB, the end of
+the run 2 237 MB -> 1 006 MB, with 69 243 positions against 68 344 - the same
+speed. It is a representation change, not a search change: C<eq_fest_promote>
+168/0/0 in both C<--blok> arms after each step.
+
+B<Since 0.16 (2026-09-11) the node score is packed too.> It had become 52.7 %
+of the tree: a hash of thirteen small numbers, 1 639 bytes a node. It is now one
+string of thirteen doubles in the fixed order of C<SCORE_KEYS> (doubles, because
+the girl C<value> is a float and the distances are sums of tables whose type the
+code does not promise): 160 bytes. C<score_hash> unpacks a fresh copy for the
+code that reads scores, which is almost all of it; C<score_field> and
+C<score_set> read and write one field in place. The one thing that had to be
+thought about is that a score is B<live>: the sons' distances and the girl
+values are rewritten after the node is made, and an expansion's C<best_past>
+used to point at the node's hash and so always saw the current values. It is
+now the node's index, unpacked where it is used, which sees the same thing; the
+four C<compute_*_distance> calls, which write the expanded node's distances into
+the score they are handed, get an unpacked copy that is packed back after them.
+The request tables copy four fields and keep no reference, so none of them can
+hold a stale score. C<eq_fest_promote> 168/0/0 in both arms; on 34849 the run
+went 1 006 MB -> 758 MB at 600 s (2 237 MB at 0.13), and raced against 0.15 over
+40 games in two modes it solved the same 28 with the same lengths and walked
+3.2 % more positions on the runs that ran out of time - the unpacking costs less
+than the smaller tree saves. What was left on top was the expansion record, and
+that is the next section.
+
+=head2 The expansion record: a snapshot, not a pointer
+
+After 0.16 the record itself was 28.3 % of the process's private bytes, 4 247
+bytes of which two fields were 2 501: C<best_score>, a copy of the best son's
+score (1 576), and C<advisors>, a hash of eight son indices (925). Since 0.17
+(2026-09-12) both are strings and the record is 2 128 bytes.
+
+B<The advisors> are the plain case. They are eight numbers, C<-1> where that
+advisor names nobody, they are written once by C<set_advisors_in_node> and read
+by exactly one line - C<set_weight_to_node_moves> asking C<is_an_advisor>
+whether any of them names this son. So the hash is built as a scratch hash
+inside C<set_advisors_in_node>, where all eight sub-advisors keep writing into
+it by name, and packed on the way into the record in the fixed order of
+C<ADVISOR_KEYS>; C<is_an_advisor> unpacks and compares, which is cheaper than
+up to eight hash lookups. 50 bytes against 925. They are packed as 32-bit
+integers where C declares them C<short>, because C also capped a position at
+C<MAX_MOVES> 11500 and this port dropped that cap in 0.12: a son index above
+32767 would truncate silently, and the width costs 16 bytes of the record.
+
+B<The best score is the interesting one>, because the obvious move - store the
+son's node index, as C<best_past> does since 0.16 - is wrong, and C says so in
+its own types: the expansion struct declares C<score_element best_score> by
+value and C<score_element *best_past> as a pointer, with a comment at the
+pointer saying the score may be updated by the match distance. A score is live,
+so the two mean different things. C<best_past> is meant to follow the node;
+C<best_score> is meant to be B<what the best son's score was when
+C<set_best_move> last ran>, and between that moment and the heap comparison that
+reads it, another expansion sharing that son can rewrite its distances, or the
+girl back-propagation its value.
+
+So the record keeps a copy, and the copy is the packed C<node_score> string
+itself - a plain string assignment, 158 bytes against 1 576, and by construction
+the same thirteen numbers the hash held. C<is_better_element> unpacks the two
+strings into hashes for C<is_better_score>, and only after the weight
+comparison, which returns first in one call of six.
+
+That unpacking is the price, and it was counted rather than estimated:
+C<is_better_element> is entered 69 times per position, 83 % of those get past
+the weights, and one unpacked pair costs 2.14 microseconds - 0.80 s of a 60 s
+budget, 1.3 %. Against it, the halved record: measured on 34849 C<FF_HF> at
+600 s the record went 4 247 -> 2 128 bytes, its share of private memory 28.3 ->
+14.7 %, and the run ended at 683 MB against 758. Raced over 40 games in two
+modes at 60 s (campaign C<ab-rec-1>), the two arms solved
+B<the same 28 games>, one FF_GIRL length differed by six moves in 28, and on
+the runs that ran out of time the slot walked 0.6 % B<fewer> positions, ahead
+in 21 pairs of 52. So this step, unlike 0.14 to 0.16, buys memory with a little
+speed rather than with nothing; the memory is what ends long runs.
+
+If that 1.3 % is ever wanted back, the measurement says where it is: building
+the hash, not the C<unpack>. On the same score string two hashes cost 3.11
+microseconds, two arrays 0.63 and one field read through C<substr> 0.20, so a
+comparator reading the packed score by field would make the price disappear -
+at the cost of a second copy of C<is_better_score> and its four helpers, which
+is a place where two versions can drift apart.
+
+=head2 A small search gives its positions back
+
+Six searches run beside the main one and each builds a pool of positions of
+its own: the k-distance search, C<can_put_all_on_targets>, the rooms search,
+the wobblers search, the XY search and the corral search. Until 0.18 none of
+those pools was ever freed. The positions in a pool point at each other in a
+ring: a son's C<father> is its parent, the parent's C<place_in_positions>
+holds the son, and C<set_place_in_positions> links any two positions that a
+move connects, in both directions when the move can be undone. Perl frees a
+value when nothing refers to it, and a ring always refers to itself, so the
+pool of every finished search stayed in the process for good.
+
+Since 0.18 every one of the six calls C<release_positions> before it returns,
+which deletes C<father> and C<place_in_positions> from each position of the
+pool; the pool then goes when the sub's own variable does. Weakening C<father>
+alone would not have been enough, because of the links between positions that
+are not parent and son.
+
+This was the memory "outside every structure" that the analysis by parts could
+not place. Measured at 600 seconds through the slot's probe, the working set
+of the process against the sum of the tree, the perimeter and the deadlock
+cache: on game 6447 (20 boxes, 93 cells, FF_BASE) the tree and the tables were
+83 MB of 529, and the rest grew by the minute while the tree did not; with the
+release the process holds 238 MB and no longer grows between the fifth and the
+tenth minute. On game 34849 (FF_HF) 568 MB became 442. The search itself is
+unchanged: C<ai/eq_fest_promote.pl> 168/0/0 in both C<--blok> arms.
+
+On 34849 the part outside the structures still grows slowly after the release
+(62 to 138 MB between the fifth and the tenth minute, the tree standing still),
+so there is a second, smaller source that has not been found.
+
+=head2 The board hash is computed in C
+
+A position's identity in the tree, the perimeter and the deadlock cache is a
+64-bit number computed from the whole board. C needed its own hash function
+because it had no hash table; the port kept the function and walked every byte
+of the Height x Width board in a Perl loop - 6.97 microseconds on an 81-byte
+board, 30.83 on a 384-byte one, 36 to 47 times per expansion. Since 0.15
+(2026-09-11) it is the first eight bytes of the board's MD5, read as a signed
+64-bit number, the same type as before: 0.46 and 0.79 microseconds.
+
+The value is an identity and nothing more, with one exception, and that
+exception is why this was raced rather than assumed: C<estimate_uniqe_moves>
+guesses how many different moves a side search has by counting how many of
+1 024 buckets (C<hash & 0x3FF>) are occupied, and gives the search up on that
+guess, so another hash function can tip a borderline case. No hash table is
+iterated anywhere, so nothing else can move. C<eq_fest_promote> came out
+168/0/0 in both C<--blok> arms; raced against 0.14 over 40 games in two modes at
+60 s the same 28 were solved, and the runs that ran out of time walked 2.3 %
+more positions, 47 pairs of 52 ahead - the share the hash had in the profile.
+
+=head1 DEADLOCKS
+
+The engine carries its own battery: freeze detection after a push, 2x2 and 3x3
+patterns, a matching feasibility test, a pull-mode pattern database, corral
+proofs, and a library of 116 push patterns plus 60 pull patterns retrieved from
+C<data/stor/fest_patterns.stor>.
+
+C<$BLOK_REPLACES> substitutes this project's own C<blok> table for the
+move-level part. C<blok> is not a static table, which is the thing that makes
+the substitution possible: it is indexed BY THE MOVE - "make this move in this
+game and pattern p appears; under p the boxes may not stand like this" - so it
+is as specific as a dynamic test, with the work paid once, offline. Measured
+over 14 130 candidate pushes it catches 100 % of what freeze, 3x3, mpdb and the
+raw-board 2x2 test kill and 98 % of the pattern library, at 16 microseconds a
+call against their 479.
+
+It is a B<switch and not a setting>, and that is a measured conclusion rather
+than caution: raced over 26 games it left the solved count at 18 and walked
+15-25 % more positions, winning one game and losing another. It does not shrink
+the search tree, it reshuffles it. Campaigns therefore alternate, and the
+setting rides in the version stamp so that a later query cannot average two
+different engines.
+
+B<blok is indexed by ONE push, and a move here is many - so it asks about the
+last one> (0.13, 2026-09-11). The Parser builds C<blok{box}{target}> over the
+one-push targets of each cell, while a move of this engine carries its box over
+as many pushes as the player can make in a row. From 0.04 to 0.12
+C<blok_forbids> asked about the pair (origin, destination), found no entry for
+a multi-push move and answered "not forbidden" - and under C<$BLOK_REPLACES> the
+mpdb test is skipped for every move, so the destination of a multi-push move
+was guarded by the 2x2 mask in C<set_current_impossible> and
+C<is_inefficient_position> alone. Measured over 36 games and two modes, only
+21 % of the generated moves had an entry at all, and of the 46 272 moves the
+2x2 mask removed, blok had forbidden 9 710. After a move the player stands
+where the box stood before its last push, C<T + Delta[sokoban_position]>, so
+the question now is C<blok{that cell}{T}> with the origin cleared and C<T> set:
+for a one-push move it is the old question exactly, for a longer one it is the
+question the table can answer. An entry now exists for 86 % of the moves, and
+it forbids 36 560 of the 36 562 moves the mask removed and the old lookup let
+through.
+
+It is sound on the only evidence that can say so: replayed push by push, 2 050
+known solutions (209 823 pushes, the table consulted on 178 806) were never
+forbidden once - and the last-push question is always one push of such a
+solution. Raced against 0.12 over 40 games (24 that Festival had never solved,
+16 it solves) in two modes at 60 s: 28 solved each; game 42637 solved for the
+first time by anything, 22.6 s under C<FF_BASE>; 34895 lost under C<FF_GIRL>,
+which 0.12 solves at 50-60 s - a reshuffle, not a fault, since no solution push
+is forbidden; 3.9 % more positions on the pairs that both ran out of time.
+
+=head1 WHAT THIS ENGINE DOES NOT DO
+
+=over 4
+
+=item It does not analyse levels
+
+See L</WHAT IT TAKES IN>.
+
+=item It does not solve cyclic levels
+
+A level that starts with every box already on a goal - Festival calls it cyclic,
+and solving it means taking boxes off their goals and bringing them back - had
+its own path here, C<has_winning_move>, guarded by C<is_cyclic_level>. Both were
+removed at 0.05. This database contains no such level and never will: the USER
+removed the few there were, because it is B<not unambiguous what the solution
+should be> - probably to get the player out of an encirclement of boxes, but it
+was not clear where to. This is a capability given up on purpose, not dead code
+swept away.
+
+=item It does not run on more than one core
+
+The C pthread paths are not ported. One search tree, one helper. Parallelism in
+this project is one process per game, not one process using many cores.
+
+=item It does not read XSB
+
+Input is the analysis blob. The digit-code path went with the 2026-08-21 rework.
+
+=back
+
+=head1 DEVIATIONS FROM THE C ORIGINAL
+
+Beside the four arena decisions above:
+
+=over 4
+
+=item Tree size
+
+C computes the tree's size as C<23 + extra_mem> ("about 1.5GB per core", one
+tree per core, three less for the dragonfly core) and allocates it up front.
+The port carried it as the constant C<LOG_SIZE> 20, and in this port the number
+was not memory at all - C<init_tree> allocates nothing - it only fed the
+C<tree_nearly_full> thresholds. Since 0.12 there is no size: see "The tree has
+no capacity fuses".
+
+=item Pattern matching at the board edge
+
+The C original reads whatever lies outside the active region - stack padding -
+which in practice never matches. Here any non-wildcard pattern cell outside the
+board means "no match", and the window anchor must lie inside the board. Same
+net effect, deterministic instead of accidental.
+
+=item The imagined board
+
+Two halves of one fix, and the first place where the port deliberately behaves
+BETTER than the executable. C<reset_helper> clears the imagined board so it
+cannot survive into the next strategy or the next level; and the forward search
+skips an HF or REV second half whose board the first half never produced, which
+happens when a starved budget rounds the first half's slice down to zero. C dies
+in both situations and, because its error path is a print followed by a
+keypress, B<hangs> instead of reporting. Gate: C<ai/t_fest_short_limit.pl>.
+
+=item Zeroed out-of-plan zones
+
+C<setup_plan_features> pre-zeroes them; C leaves the step past the last written
+one as malloc garbage, which in Perl would be an undef and a death.
+
+=item The path is written again from its pushes (0.20)
+
+A solution is a row of elementary pushes: the player walks to a box and pushes
+it one cell, and the push says where he had to stand. That holds whatever a
+search calls a position and however far one of its moves carries a box, and it
+is the rule every engine of this project builds its path by (2026-10-12). This
+engine could not, as the original cannot: its solution is a list of macros,
+"this box from here to there, the player ending on that side of it", and
+C<sol_moves_string> turns each macro into letters with C<find_sol_move>, a
+search for the fewest letters of that one macro I<with the player's end cell
+given>. Three things come of it, counted on the 37 567 paths this engine solved
+in the matrix campaign fm-1:
+
+=over 4
+
+=item a tail (643 paths)
+
+The search asks "is it solved?" of the position a macro ends in and of no
+position the macro passes through. The last macro of a solution is often the
+one that leads into the packing search's tree, whose starting position has the
+player in one particular part of the floor: the box goes over its goal - the
+level is solved at that push - and round, to come to the same goal from the
+side that leaves the player there. In every one of the tails that one box alone
+moves after the level is solved.
+
+=item a walk longer than the shortest (808 paths)
+
+The letters of a macro can end with plain steps to the cell the macro says the
+player ends on, and the next macro begins with a walk of its own: two shortest
+walks that meet in a cell nobody needed. Game 193, FF_BICON: C<dRdrUlu> and
+then C<drdrruL>, eight steps where four do.
+
+=item a box carried away and brought back (1 855 paths)
+
+The tree knows positions only where a macro ends, so two macros - or a macro
+passing through a position the line of play had already been in - can give the
+same boxes twice.
+
+=back
+
+So C<solve> passes the letters of C<sol_moves_string> through
+C<Games::Sokoban::Path::rebuilt> before it returns them, with the level as this
+engine holds it (C<$Initial_board>, C<$Initial_sokoban_p>; the same cells, walls,
+goals and boxes as the stored board, measured on 797 games). That procedure
+plays the letters, takes down the pushes until every goal is under a box,
+leaves out the pushes that only take the boxes away and bring them back where
+that makes the path shorter, and plays the rest with a shortest walk to each.
+No search is touched and C<sol_moves_string> is as it was. 3 221 of the 37 567
+paths come out shorter, by 53 196 steps; 21 880 more only walk over other cells
+than C<find_sol_move> chose. Gate: C<ai/eq_path_rebuilt.pl> - the engine is run
+again on pairs whose path as 0.19 returned it is on record and must return that
+path rewritten (20 pairs, 18 of them shorter, none failed).
+
+=back
+
+=head1 RUNNING IT IN A RACE
+
+C<Games::Sokoban::Race> drives several engines or modes over one game and stops
+the losers. It sets C<$RACE_FLAG> and C<$RACE_GID> symbolically; the three
+search loops poll them at one site each, the race flag once a second, and a
+polled abort returns C<IGNORE>, which is recorded nowhere. C<MEMCAP> from the
+C<$MAX_GB> ceiling is recorded, as a TIMEOUT-grade result.
+
+=head2 The result line has the same shape as Firstbet's
+
+The C<ENDING> constant is character for character the C<$ENDING> of
+F<Firstbet.pm>, and that is the point: a driver interleaves the two engines'
+lines -- F<app/first/tandem_matrix.pl> prints all eighteen modes of one game --
+so a column that moves between engines is a column nobody can read down.
+
+The head is what every search knows: mode, game, boxes, cells (this engine puts
+its own C<$Index_num> there, which is a different quantity from the C<ncell> the
+drivers print -- see L</DEVIATIONS FROM THE C ORIGINAL>), reason, solution
+length, player steps, seconds. The tail is five slots:
+
+    1 box moves/s   2 positions/s   3 queue peak   4 queue left   5 positions seen
+
+A mode with nothing for a slot leaves it BLANK rather than shifting the rest.
+This engine fills slot 2 with its own position rate, slot 4 with the plan length
+(C<< $Helper->{sol_len} >>) and slot 5 with the seen count; slots 1 and 3 stay
+empty. Slot 5 is the seen count in every mode of both engines, so the last
+column reads straight down.
+
+Until 2026-08-30 the line carried the literal word C<makra> before the plan
+length (C<macros> on the Firstbet side, in ORDER), which pushed every column
+after it out of step with the other modes. The word is gone; nothing but the
+formatting changed, so C<$VERSION> was NOT bumped -- rows written before and
+after it are the same engine.
+
+=head1 HOW IT IS VERIFIED
+
+=over 4
+
+=item ai/eq_fest_promote.pl
+
+Slot against baseline on the answer itself - the pair C<(reason, path)>, over
+21 games times 8 modes. Takes C<--module> so any working copy can be held to
+the same question. Only SOLVED rows count and C<nseen> is printed as
+information, for the reason given under L</solve>.
+
+=item ai/t_ff_reentry.pl
+
+Solving game A, then B, then A again in one process must give the answer it gave
+the first time. Any per-level state that outlives its level is a fault of the
+class that cost this port the imagined board in 2026-08-08, where the C original
+does not merely die but hangs.
+
+=item The pin is gone (2026-08-26)
+
+C<ai/eq_ff_rework.pl> proved B<bit-identity> against the pinned commit
+C<fdb2333> by reading a C<dbg_*> expansion-order checksum -- a far sharper
+instrument than equal answers, because two engines can agree on every solution
+and still walk differently. It is worth knowing why it is not here any more.
+
+It existed for the B<transcription era>: the question "is this Perl faithful to
+Yaron Shoham's C?" That question is answered and closed, and the checksum needed
+an instrumentation layer in the experiment slot which 29 scripts had grown into.
+Reviewing those scripts found that all but four had already answered their own
+question, so the layer went with them and the pin with the layer. What remains is
+C<eq_fest_promote> on the answer, and the last thing the pin's replacement did
+before the slot was re-synced was to compare the engine BEFORE this day's rework
+with the engine after it: 168 of 168, no mismatch, no skip.
+
+=item ai/smoke_fest.pl
+
+Runs the full production scheduler and replays every returned path on an
+INDEPENDENT board model parsed straight from C<game_blob.code>. A solved claim
+has to replay to a board with every box on a target.
+
+=item ai/t_ff_modes.pl, ai/t_ff_reentry.pl, ai/t_ff_race.pl, ai/t_fest_short_limit.pl, ai/fest_invariants.pl
+
+Modes, re-entry, the race contract, short budgets, and the module's own
+invariants.
+
+=item ai/t_level_guarantees.pl
+
+Not a test of this engine but of the world it works in: the properties
+C<app/zdroj.pl> and C<Games::Sokoban::Code> established once, checked over all
+32 236 games. It is what licenses the engine not to re-check them.
+
+=item ai/t_shadow.pl, ai/module_surface.pl --subs, ai/audit_decls.pl
+
+The three source audits a promotion runs.
+
+=back
+
+=head1 CONVENTIONS IN THE SOURCE
+
+These are not style preferences; each one is load-bearing and each was arrived
+at by something going wrong.
+
+=over 4
+
+=item Scope is visible in the name
+
+Every file-scope variable starts with a capital, every local is entirely
+lower-case. The two sets cannot intersect, so shadowing cannot be written by
+accident. C<ai/t_shadow.pl> checks all three kinds of local binding - C<my>
+declarations, foreach loop variables and B<signature parameters>. That last one
+is not a C<my> declaration as far as a parser is concerned, and leaving it out
+is how C<sub time_limit_exceeded ($Time_limit, ...)> survived a rename.
+
+=item Declarations are one block, alphabetically
+
+All file-scope variables are declared in one C<my (...)> right after the single
+C<use constant> block, sorted by a plain ASCII sort including the sigil, and
+initialised later where their initialiser stands. A reader looks a name up in
+that block; only alphabetical order supports that.
+
+=item Every call points backward
+
+The subroutines are ordered so that nothing calls anything defined below it.
+Leaves are at the top and C<solve> is the last subroutine in the file. Perl does
+not need this - definitions are installed at compile time - but a reader does.
+
+=item Guards, not nested ifs
+
+Where an C<if> wrapped the tail of a loop body it is a C<next> instead. The file
+uses that idiom several hundred times; the ones that did not were the exception.
+
+=item Invariants stay; capacity guards did not
+
+There are about 145, nearly all inside the search, checking that the algorithm
+is behaving on data it produced itself. Those stay, and B<"it has never fired"
+is not an argument against them> - that is what an assertion is for.
+
+Eight were different in kind and went at 0.05. They were bounds copied from C
+array declarations - C<max requests>, C<solution is too long>, C<plan is too
+long> twice, the two dragonfly length guards, C<label overflow> - and in C they
+prevented a buffer overrun, which is memory corruption. B<Here there is no
+buffer.> C<< $r->{'requests'}[$n] //= {} >> simply grows the array.
+
+That inverts what firing would mean, and it is the whole reason they went:
+
+=over 4
+
+=item *
+
+An invariant firing says B<something is wrong, stop>. That is a rescue.
+
+=item *
+
+A capacity guard firing says B<nothing is wrong, stop anyway>. It would abort a
+search that was working, on a level larger than anything in this database.
+
+=back
+
+They were also two to three orders of magnitude away from ever mattering, and
+the checks were live rather than unreached - measured across five games and all
+eight modes: C<pack_requests_num> reached 19 of 10 000 over 6 224 calls,
+C<requests_num> 10 of 10 000, the tree label 18 of 10 000 over 7 560 calls, a
+solution depth 26 of 1 500. C<MAX_REQUESTS> and C<MAX_TREE_LABELS> went with
+them, having no other reader.
+
+Two halves were kept deliberately. C<label overflow> tested C<< $label < 0 or
+$label >= MAX_TREE_LABELS >>; the negative half is an invariant and survives as
+C<negative label>. And C<pattern too big> in C<add_stuck_pattern> stays: its one
+caller pre-checks the same condition, so it is unreachable by construction and
+records that contract at the place that depends on it.
+
+This matters more since a dying worker became fatal (see L</HOW IT IS
+VERIFIED>): a false alarm would now stop a fifteen-hour sweep, not just print a
+line.
+
+=item What was removed instead was constant work
+
+Two whole-board scans that rebuilt a level property on every scored position.
+The assertion behind each one stayed, comparing against the stored count.
+
+=back
+
+=head1 SEE ALSO
+
+L<Games::Sokoban::Festival_Parser> - the level analysis, and the blob format.
+
+L<Games::Sokoban::FestivalEXE> - the wrapper around the real Festival binary.
+
+L<Games::Sokoban::Firstbet> - the other first-solution engine.
+
+C<app/fest_all.pl>, C<app/fest_prep.pl>, C<app/loop_base.ps1> - the drivers.
+
+The C<pravidla> skill, section 9, for how a promotion into this file works.
+
+=head1 AUTHOR
+
+The Festival algorithm is Yaron Shoham's (Festival 3.1). This port and its
+subsequent reworking belong to the Sokoban project.
+
+=cut

@@ -8,4 +8,13 @@ Revision history for Games-Sokoban-Solver
       level preparation (Code 1.0, Parser 1.0, Festival_Parser 0.02, FestDev
       1.00).  Deadlock patterns are computed at run time by the Finder instead
       of being read from the project's pattern database.
+    - Two things the project's engines never met and the Parser now refuses or
+      reports instead: a level with a goal no box can ever be pushed onto (the
+      Festival engine died on such a level), and a Festival analysis whose two
+      budget fuses fired -- the hash carries hotspots_incomplete and
+      envelopes_incomplete where the project stopped with an error.
+    - The optimal solver keeps its three regimes (DIAL, ASTAR, FIFO) and the
+      band; what went was the storage: the database writes, the BerkeleyDB seam
+      (the caches live in RAM for one solve), the SQL log and the statistics.
+      $LastStatus names the stop, $ON_IMPROVED reports every improvement.
     - Skeleton created with h2xs 1.23 (-AX --skip-exporter --use-new-tests).

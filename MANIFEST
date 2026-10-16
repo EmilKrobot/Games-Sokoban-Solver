@@ -9,13 +9,19 @@ lib/Games/Sokoban/Solver/Data/fest_patterns.stor
 lib/Games/Sokoban/Solver/Data/hole_pattern.stor
 lib/Games/Sokoban/Solver/Data/hole_templates.stor
 lib/Games/Sokoban/Solver/Data/README.txt
+lib/Games/Sokoban/Solver/Fest.pm
 lib/Games/Sokoban/Solver/Fest/Analysis.pm
+lib/Games/Sokoban/Solver/Festival.pm
+lib/Games/Sokoban/Solver/Festival.pod
 lib/Games/Sokoban/Solver/Festival/Analysis.pm
 lib/Games/Sokoban/Solver/Finder.pm
+lib/Games/Sokoban/Solver/FirstBack.pm
+lib/Games/Sokoban/Solver/Firstbet.pm
 lib/Games/Sokoban/Solver/Heap.pm
 lib/Games/Sokoban/Solver/Level.pm
 lib/Games/Sokoban/Solver/Memory.pm
 lib/Games/Sokoban/Solver/Munkres.pm
+lib/Games/Sokoban/Solver/Optimal.pm
 lib/Games/Sokoban/Solver/Parser.pm
 lib/Games/Sokoban/Solver/Path.pm
 lib/Games/Sokoban/Solver/Replay.pm
@@ -33,5 +39,7 @@ t/06-finder.t
 t/07-parser.t
 t/08-festival-analysis.t
 t/09-fest-analysis.t
+t/10-engines.t
+t/11-optimal.t
 t/data/micro.xsb
 t/lib/BruteForce.pm

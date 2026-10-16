@@ -19,6 +19,8 @@ my @modules = (
     'Games::Sokoban::Solver::Path',    'Games::Sokoban::Solver::Replay',
     'Games::Sokoban::Solver::Level',   'Games::Sokoban::Solver::Code',   'Games::Sokoban::Solver::Finder',
     'Games::Sokoban::Solver::Parser',  'Games::Sokoban::Solver::Festival::Analysis', 'Games::Sokoban::Solver::Fest::Analysis',
+    'Games::Sokoban::Solver::Firstbet', 'Games::Sokoban::Solver::FirstBack', 'Games::Sokoban::Solver::Festival',
+    'Games::Sokoban::Solver::Fest',     'Games::Sokoban::Solver::Optimal',
 );
 
 use_ok($_) for @modules;
@@ -38,6 +40,11 @@ ok(!defined &Handy::backline,          'nothing loaded the other project\'s Hand
 ok(!defined &Games::Munkres::assign,   'nothing loaded the other project\'s Games::Munkres');
 ok(!Games::Numeric->can('new'),        'nothing loaded the other project\'s Games::Numeric');
 ok(!defined &Games::Sokoban::Firstbet::solve, 'nothing loaded the other project\'s Firstbet');
+ok(!defined &Games::Sokoban::Solver::solve,   'the main module is the facade, not the other project\'s optimal solver');
+ok(!defined &Games::Sokoban::Festival::solve && !defined &Games::Sokoban::Fest::solve && !defined &Games::Sokoban::FirstBack::solve,
+    'nothing loaded the other project\'s Festival, Fest or FirstBack');
+ok(!defined &Games::Berkeley::g_init && !defined &Games::Sokoban::Zapis::save_bestbet && !$INC{'DBI.pm'},
+    'no BerkeleyDB seam, no database writer, no DBI');
 
 # A file that is not a .pm travels with the modules and is installed beside
 # them: this is what the data tables of the distribution rely on.

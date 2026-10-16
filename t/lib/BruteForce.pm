@@ -57,4 +57,58 @@ sub solve ($code) {
     return undef;    # no solution
 }
 
+# A solution LONGER than the shortest one in pushes, within $max_len letters
+# (undef when there is none): a seed for a test of the optimal solver that
+# must be bettered. The same search, over (position, depth) so that a longer
+# way to a position is not thrown away, taking the first solution found with
+# more pushes than $shortest has.
+sub longer ($code, $shortest, $max_len) {
+    my $want = ($shortest =~ tr/A-Z//) + 1;
+    my @rows  = split(/,/, $code, -1);
+    my $w     = length $rows[0];
+    my $cells = join('', @rows);
+    my (@free, @goal, %box, $man);
+    for my $cell (0 .. length($cells) - 1) {
+        my $d = substr($cells, $cell, 1);
+        $free[$cell] = 1 if $d ne '9' and $d ne '1';
+        $goal[$cell] = 1 if $d eq '3' or $d eq '7' or $d eq '8';
+        $box{$cell}  = 1 if $d eq '4' or $d eq '7';
+        $man = $cell    if $d eq '5' or $d eq '6' or $d eq '8';
+    }
+    my $key   = sub ($man, $box, $depth) { join(',', $man, $depth, sort { $a <=> $b } keys %$box) };
+    my %seen  = ($key->($man, \%box, 0) => 1);
+    my @queue = ([$man, {%box}, '']);
+    my %letter = (-1 => 'l', 1 => 'r', $w => 'd', -$w => 'u');
+    while (@queue) {
+        my ($at, $boxes, $path) = @{ shift @queue };
+        next if length $path >= $max_len;
+        my $column = $at % $w;
+        for my $delta (-1, 1, $w, -$w) {
+            next if $delta == -1 and $column == 0 or $delta == 1 and $column == $w - 1;
+            my $to = $at + $delta;
+            next if $to < 0 or !$free[$to];
+            my %next = %$boxes;
+            my $step = $letter{$delta};
+            if ($next{$to}) {
+                my $beyond = $to + $delta;
+                next if $beyond < 0 or !$free[$beyond] or $next{$beyond};
+                next if $delta == -1 and $to % $w == 0 or $delta == 1 and $to % $w == $w - 1;
+                delete $next{$to};
+                $next{$beyond} = 1;
+                $step = uc $step;
+                if (!grep { !$next{$_} } grep { $goal[$_] } 0 .. $#goal) {
+                    my $found = $path . $step;
+                    return $found if ($found =~ tr/A-Z//) >= $want;
+                    next;
+                }
+            }
+            my $k = $key->($to, \%next, length($path) + 1);
+            next if exists $seen{$k};
+            $seen{$k} = 1;
+            push @queue, [$to, \%next, $path . $step];
+        }
+    }
+    return undef;
+}
+
 1;
