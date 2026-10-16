@@ -21,6 +21,7 @@ my @modules = (
     'Games::Sokoban::Solver::Parser',  'Games::Sokoban::Solver::Festival::Analysis', 'Games::Sokoban::Solver::Fest::Analysis',
     'Games::Sokoban::Solver::Firstbet', 'Games::Sokoban::Solver::FirstBack', 'Games::Sokoban::Solver::Festival',
     'Games::Sokoban::Solver::Fest',     'Games::Sokoban::Solver::Optimal',
+    'Games::Sokoban::Solver::Race',     'Games::Sokoban::Solver::Portfolio', 'Games::Sokoban::Solver::Config',
 );
 
 use_ok($_) for @modules;
@@ -52,6 +53,10 @@ ok(!defined &Games::Sokoban::Festival::solve && !defined &Games::Sokoban::Fest::
     'nothing loaded the other project\'s Festival, Fest or FirstBack');
 ok(!defined &Games::Berkeley::g_init && !defined &Games::Sokoban::Zapis::save_bestbet && !$INC{'DBI.pm'},
     'no BerkeleyDB seam, no database writer, no DBI');
+ok(!defined &Games::Sokoban::Race::new && !defined &Games::Sokoban::Tandem::solve && !defined &Games::Sokoban::Portfolio::firstbet_modes,
+    'nothing loaded the other project\'s Race, Tandem or Portfolio');
+ok(!$INC{'threads.pm'} && !$INC{'threads/shared.pm'} && !$INC{'Thread/Queue.pm'},
+    'loading Race does not load the thread modules (they come at start() of a threaded pool)');
 
 # A file that is not a .pm travels with the modules and is installed beside
 # them: this is what the data tables of the distribution rely on.

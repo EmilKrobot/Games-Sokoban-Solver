@@ -23,4 +23,17 @@ Revision history for Games-Sokoban-Solver
       directory the caller names; a second process on one store directory is
       refused, and the optimal twin refuses a pool over 3 GB (the module keeps
       the size in 32 bits).
+    - The race: Games::Sokoban::Solver::Race (the project's Race 0.03) loads the
+      thread modules at start() and only for a pool of more than one worker on
+      a perl with ithreads; with one worker, or on a perl without them, the same
+      submit / next / join calls run every task in this interpreter, one after
+      another.  A task may be of another kind than a solve (a handler registered
+      at construction), so the deadlock patterns of a level can be dealt out to
+      the pool that will race its modes.  Portfolio (the project's Portfolio
+      0.01, Tandem 0.02 and the panel of its wave driver): the 27 modes, the
+      order of the race, a mode's own limit, the kinds and caps of what runs at
+      once, and the one engine face that routes a mode to its engine by name --
+      to the BerkeleyDB twin of Firstbet under $BERK.  Config: the settings of
+      soko-solver, their defaults, the ini file, and the questions of the
+      first run.
     - Skeleton created with h2xs 1.23 (-AX --skip-exporter --use-new-tests).

@@ -3,6 +3,7 @@ INSTALL
 lib/Games/Sokoban/Solver.pm
 lib/Games/Sokoban/Solver/Berkeley.pm
 lib/Games/Sokoban/Solver/Code.pm
+lib/Games/Sokoban/Solver/Config.pm
 lib/Games/Sokoban/Solver/Console.pm
 lib/Games/Sokoban/Solver/Data.pm
 lib/Games/Sokoban/Solver/Data/corridor_pattern.stor
@@ -28,6 +29,8 @@ lib/Games/Sokoban/Solver/Optimal.pm
 lib/Games/Sokoban/Solver/Optimal/Berk.pm
 lib/Games/Sokoban/Solver/Parser.pm
 lib/Games/Sokoban/Solver/Path.pm
+lib/Games/Sokoban/Solver/Portfolio.pm
+lib/Games/Sokoban/Solver/Race.pm
 lib/Games/Sokoban/Solver/Replay.pm
 Makefile.PL
 MANIFEST
@@ -45,6 +48,9 @@ t/08-festival-analysis.t
 t/09-fest-analysis.t
 t/10-engines.t
 t/11-optimal.t
+t/12-portfolio.t
+t/13-race.t
+t/17-config.t
 t/18-berkeley.t
 t/data/micro.xsb
 t/lib/BruteForce.pm
