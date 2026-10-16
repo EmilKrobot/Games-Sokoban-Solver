@@ -78,6 +78,14 @@ my $jobs    = $serial                                                  ? 1 : $cf
 my $quiet   = $o{'quiet'}                                              ? 1 : 0;
 my $verbose = $o{'verbose'}                                            ? 1 : 0;
 my %caps    = ('pull' => $cfg{'pull'}, 'forward' => $cfg{'forward'});
+
+# The memory probe says once on STDERR when this machine has none (the memory
+# net is then off). --quiet leaves errors alone on STDERR, and that is a notice:
+# the first probe is made here with the warning swallowed, and it is never said again.
+if ($quiet) {
+    local $SIG{'__WARN__'} = sub { };
+    Games::Sokoban::Solver::Memory::scope();
+}
 for my $mode ($cfg{'optimal_mode'}) {
     die "soko-solver.pl: --optimal-mode must be DIAL, ASTAR or FIFO\n"
         unless grep {$_ eq $mode} Games::Sokoban::Solver::Portfolio::solver_modes();

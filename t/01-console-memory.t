@@ -75,7 +75,8 @@ is(length podil(7, 7), 7,         'seven characters wide');
 {
     my $out =
 `"$^X" -Ilib -MGames::Sokoban::Solver::Memory -e "print join(' ', Games::Sokoban::Solver::Memory::scope(), Games::Sokoban::Solver::Memory::used_gb(), Games::Sokoban::Solver::Memory::total_gb())" 2>&1`;
-    like($out, qr/\A(?:system|none) \d+(?:\.\d+)? \d+(?:\.\d+)?\s*\z/m, "a fresh perl answers numbers ($out)");
+    # the module's one warning (no probe here) may precede the numbers
+    like($out, qr/^(?:system|none) \d+(?:\.\d+)? \d+(?:\.\d+)?\s*\z/m, "a fresh perl answers numbers ($out)");
     my ($scope, $used, $total) = split ' ', (grep {/\A(?:system|none) /} split /\n/, $out)[0] // '';
     if (($scope // '') eq 'system') {
         cmp_ok($total, '>',  0,      'system scope: the machine has memory');
