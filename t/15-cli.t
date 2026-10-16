@@ -147,7 +147,7 @@ XSB
     is($lines[1], 'REFUSED', 'the second is REFUSED');
     like($lines[0], qr/\A[udlrUDLR]+\z/, 'the first solved');
     like($lines[2], qr/\A[udlrUDLR]+\z/, 'the third solved: the run went on');
-    like($err, qr/REFUSED: 2 players/, 'STDERR says why');
+    like($err, qr/REFUSED: 2 players \(there must be one\)$/m, 'STDERR says why, without the place in the code');
     like($err, qr/^done: 2 solved \(2 proved\), 0 unsolved, 1 refused/m, 'the tally counts it');
 }
 

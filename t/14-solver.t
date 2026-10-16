@@ -127,6 +127,7 @@ XSB
         my $r = Games::Sokoban::Solver::solve_level('rows' => $rows);
         is($r->{'status'}, 'REFUSED', "solve_level: REFUSED ($what)");
         like($r->{'reason'}, qr/\AREFUSED: /, 'and the reason is the sentence');
+        unlike($r->{'reason'}, qr/ at \S+ line \d+|\n/, 'without the place in the code or a second line');
     }
 }
 

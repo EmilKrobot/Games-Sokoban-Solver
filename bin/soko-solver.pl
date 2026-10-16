@@ -193,7 +193,7 @@ for my $w (@work) {
     unless ($p) {
         my $why = "$@";
         if ($why =~ /\AREFUSED:/) {
-            $why =~ s/\n.*//s;
+            $why = Games::Sokoban::Solver::refusal($why);
             info("$tag  REFUSED: " . ($why =~ s/\AREFUSED:\s*//r));
             say_level_result($level, { 'status' => 'REFUSED', 'reason' => $why });
             ++$tally{'REFUSED'};

@@ -642,6 +642,22 @@ sub full_path ($p, $path) {
     return $full;
 }
 
+=head2 refusal
+
+    my $sentence = refusal($@);
+
+The one sentence of a C<REFUSED:> death: the first line, without the place in
+the code that C<croak> appends (the Code stage draws the board after its
+sentence; that goes too).
+
+=cut
+
+sub refusal ($why) {
+    $why =~ s/\n.*//s;
+    $why =~ s/ at \S+ line \d+\.?\s*\z//;
+    return $why;
+}
+
 =head2 solve_level
 
     my $r = solve_level(
@@ -675,8 +691,7 @@ sub solve_level (%opt) {
     unless ($p) {
         my $why = "$@";
         die $why unless $why =~ /\AREFUSED:/;
-        $why =~ s/\n.*//s;
-        return { %r, 'status' => 'REFUSED', 'reason' => $why };
+        return { %r, 'status' => 'REFUSED', 'reason' => refusal($why) };
     }
     $r{'prepared'} = $p;
     %pass = map { ($_, $opt{$_}) } grep { exists $opt{$_} } 'time', 'modes', 'pool', 'jobs', 'caps', 'hold_gb', 'max_gb', 'blok', 'on_answer', 'on_note';
